@@ -70,9 +70,9 @@ Dokumen ini memuat seluruh *Epic*, *Issue*, dan *Atomic Tasks* untuk pengembanga
   Mengotomatiskan booting daemon MariaDB dan membuat database `moodle` secara terprogram tanpa intervensi SQL manual dari pengguna.
 
 * **Tasks**:
-  - [ ] Buat fungsi `start_mariadb(base_dir: &str) -> Child` dengan path konfigurasi `my.ini`.
-  - [ ] Buat fungsi `create_database(base_dir: &str)` menggunakan biner CLI `mysql.exe` dengan SQL query `CREATE DATABASE IF NOT EXISTS moodle`.
-  - [ ] Tambahkan delay transisi (5 detik) untuk memastikan TCP port MariaDB `3306` siap menerima koneksi sebelum query dikirim.
+  - [x] Buat fungsi `start_mariadb(base_dir: &str) -> Child` dengan path konfigurasi `my.ini`.
+  - [x] Buat fungsi `create_database(base_dir: &str)` menggunakan biner CLI `mysql.exe` dengan SQL query `CREATE DATABASE IF NOT EXISTS moodle`.
+  - [x] Tambahkan delay transisi (5 detik) untuk memastikan TCP port MariaDB `3306` siap menerima koneksi sebelum query dikirim.
 
 * **Acceptance Criteria**:
   - Database `moodle` dengan charset `utf8mb4` dan collation `utf8mb4_unicode_ci` otomatis terbentuk di MariaDB pada *first run*.
