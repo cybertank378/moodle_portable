@@ -1,4 +1,5 @@
 pub mod database;
+pub mod moodle;
 pub mod process;
 pub mod security;
 
@@ -6,6 +7,10 @@ pub use database::{
     bootstrap_mariadb, create_database, create_database_with_params, ensure_my_ini,
     generate_my_ini, start_mariadb, wait_for_mariadb_ready, MariaDbPaths, DEFAULT_DB_NAME,
     DEFAULT_MARIADB_PORT, DEFAULT_READY_TIMEOUT,
+};
+pub use moodle::{
+    build_install_command, install_moodle, is_config_patched, patch_config_content,
+    patch_moodle_config_for_dynamic_ip, MoodleInstallOptions, MoodlePaths, DYNAMIC_WWWROOT_SNIPPET,
 };
 pub use process::{create_silent_command, run_silent_status, spawn_silent, SilentCommandExt, CREATE_NO_WINDOW};
 pub use security::{generate_secure_nginx_conf, validate_nginx_security, SandboxLayout};
