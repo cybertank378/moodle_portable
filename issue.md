@@ -87,9 +87,9 @@ Dokumen ini memuat seluruh *Epic*, *Issue*, dan *Atomic Tasks* untuk pengembanga
   Mengeksekusi installer CLI Moodle (`admin/cli/install.php`) secara otomatis dan mengganti variabel `$CFG->wwwroot` bawaan agar mendukung routing host dinamis.
 
 * **Tasks**:
-  - [ ] Implementasikan fungsi `install_moodle(base_dir: &str)` dengan argumen CLI lengkap (`--non-interactive`, `--agree-license`).
-  - [ ] Buat fungsi `patch_moodle_config_for_dynamic_ip(base_dir: &str)`.
-  - [ ] Modifikasi string `config.php` untuk mengganti statis `http://localhost` menjadi evaluasi runtime `$_SERVER['HTTP_HOST']`.
+  - [x] Implementasikan fungsi `install_moodle(base_dir: &str)` dengan argumen CLI lengkap (`--non-interactive`, `--agree-license`).
+  - [x] Buat fungsi `patch_moodle_config_for_dynamic_ip(base_dir: &str)`.
+  - [x] Modifikasi string `config.php` untuk mengganti statis `http://localhost` menjadi evaluasi runtime `$_SERVER['HTTP_HOST']`.
 
 * **Acceptance Criteria**:
   - File `config.php` terbentuk secara otomatis.
