@@ -10,7 +10,7 @@ Moodle Portable adalah platform launcher berbasis Rust yang membungkus Nginx, PH
 - [x] Penanganan silent execution (`CREATE_NO_WINDOW`) untuk seluruh daemon.
 
 ## Phase 2: Dynamic Networking & Automated Setup (Week 2)
-- [ ] Deteksi IP address LAN dinamis saat boot.
+- [x] Deteksi IP address LAN dinamis saat boot.
 - [x] Otomatisasi instalasi database & Moodle CLI (`admin/cli/install.php`).
 - [x] Patching `config.php` Moodle secara terprogram untuk dynamic HTTP_HOST routing.
 - [ ] Implementasi Moodle Cron Job runner di background thread.

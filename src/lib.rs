@@ -1,5 +1,6 @@
 pub mod database;
 pub mod moodle;
+pub mod network;
 pub mod process;
 pub mod security;
 
@@ -12,6 +13,7 @@ pub use moodle::{
     build_install_command, install_moodle, is_config_patched, patch_config_content,
     patch_moodle_config_for_dynamic_ip, MoodleInstallOptions, MoodlePaths, DYNAMIC_WWWROOT_SNIPPET,
 };
+pub use network::{get_local_ip, get_service_url, resolve_local_ip, DEFAULT_FALLBACK_IP, DEFAULT_PROBE_TARGET};
 pub use process::{create_silent_command, run_silent_status, spawn_silent, SilentCommandExt, CREATE_NO_WINDOW};
 pub use security::{generate_secure_nginx_conf, validate_nginx_security, SandboxLayout};
 

@@ -105,8 +105,8 @@ Dokumen ini memuat seluruh *Epic*, *Issue*, dan *Atomic Tasks* untuk pengembanga
   Aplikasi harus dapat mendeteksi IP LAN aktif mesin host saat ini untuk keperluan pengujian dan pembukaan browser default.
 
 * **Tasks**:
-  - [ ] Implementasikan fungsi `get_local_ip() -> String` memanfaatkan probe koneksi `UdpSocket::bind("0.0.0.0:0")` ke gateway umum (`8.8.8.8:80`).
-  - [ ] Sediakan *fallback* ke `127.0.0.1` jika PC berada dalam kondisi terisolasi tanpa antarmuka jaringan (offline total).
+  - [x] Implementasikan fungsi `get_local_ip() -> String` memanfaatkan probe koneksi `UdpSocket::bind("0.0.0.0:0")` ke gateway umum (`8.8.8.8:80`).
+  - [x] Sediakan *fallback* ke `127.0.0.1` jika PC berada dalam kondisi terisolasi tanpa antarmuka jaringan (offline total).
 
 * **Acceptance Criteria**:
   - Fungsi mengembalikan alamat IP lokal aktif (misal `192.168.1.50`) jika terhubung ke LAN/DHCP, atau `127.0.0.1` jika offline.
