@@ -1,5 +1,8 @@
 pub mod process;
+pub mod security;
+
 pub use process::{create_silent_command, run_silent_status, spawn_silent, SilentCommandExt, CREATE_NO_WINDOW};
+pub use security::{generate_secure_nginx_conf, validate_nginx_security, SandboxLayout};
 
 use std::fs;
 use std::io::{self, Cursor};

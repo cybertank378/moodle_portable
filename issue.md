@@ -51,9 +51,9 @@ Dokumen ini memuat seluruh *Epic*, *Issue*, dan *Atomic Tasks* untuk pengembanga
   Direktori data sensitif Moodle (`moodledata`) harus berada di luar *web root* Nginx (`runtime/moodle`) untuk mencegah akses publik langsung ke berkas pengguna atau cache Moodle.
 
 * **Tasks**:
-  - [ ] Atur skema lokasi ekstraksi folder `moodledata` sejajar dengan folder `moodle` (`runtime/moodledata`).
-  - [ ] Konfigurasi `nginx.conf` agar *root directory* hanya mengarah ke `../moodle`.
-  - [ ] Tambahkan blok proteksi pada `nginx.conf` untuk memblokir akses ke file `.git`, `.env`, dan berkas sensitif lainnya.
+  - [x] Atur skema lokasi ekstraksi folder `moodledata` sejajar dengan folder `moodle` (`runtime/moodledata`).
+  - [x] Konfigurasi `nginx.conf` agar *root directory* hanya mengarah ke `../moodle`.
+  - [x] Tambahkan blok proteksi pada `nginx.conf` untuk memblokir akses ke file `.git`, `.env`, dan berkas sensitif lainnya.
 
 * **Acceptance Criteria**:
   - Percobaan akses browser langsung ke path file internal `moodledata` mengembalikan status HTTP 404 / 403.

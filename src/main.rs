@@ -1,5 +1,5 @@
 use std::path::Path;
-use moodle_installer::{extract_payload, ExtractionResult};
+use moodle_installer::{extract_payload, ExtractionResult, SandboxLayout};
 
 fn main() {
     println!("=== Moodle Portable Engine Starting ===");
@@ -19,6 +19,14 @@ fn main() {
             std::process::exit(1);
         }
     }
+
+    // Initialize & verify sandbox isolation (NFR-04)
+    let sandbox = SandboxLayout::new(runtime_dir);
+    if let Err(e) = sandbox.write_secure_nginx_conf(80) {
+        eprintln!("[ERROR] Failed to initialize secure sandbox: {}", e);
+        std::process::exit(1);
+    }
+    println!("[OK] Runtime sandbox & directory isolation verified (moodledata isolated outside web root).");
 
     println!("Runtime verification completed.");
 }
