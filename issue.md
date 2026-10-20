@@ -33,10 +33,10 @@ Dokumen ini memuat seluruh *Epic*, *Issue*, dan *Atomic Tasks* untuk pengembanga
   Seluruh child process (`mariadbd.exe`, `php-cgi.exe`, `nginx.exe`, `mysql.exe`, `php.exe`) memunculkan jendela Command Prompt (CMD) hitam saat dipanggil via `Command::new`. Tambahkan flag Win32 `CREATE_NO_WINDOW` untuk menghentikan popup konsol tersebut.
 
 * **Tasks**:
-  - [ ] Import `std::os::windows::process::CommandExt`.
-  - [ ] Definisi konstanta `const CREATE_NO_WINDOW: u32 = 0x08000000;`.
-  - [ ] Refactor seluruh pemanggilan `.spawn()` dan `.status()` agar menggunakan `.creation_flags(CREATE_NO_WINDOW)`.
-  - [ ] Sediakan pengalihan `stdout(Stdio::null())` dan `stderr(Stdio::null())` pada seluruh proses.
+  - [x] Import `std::os::windows::process::CommandExt`.
+  - [x] Definisi konstanta `const CREATE_NO_WINDOW: u32 = 0x08000000;`.
+  - [x] Refactor seluruh pemanggilan `.spawn()` dan `.status()` agar menggunakan `.creation_flags(CREATE_NO_WINDOW)`.
+  - [x] Sediakan pengalihan `stdout(Stdio::null())` dan `stderr(Stdio::null())` pada seluruh proses.
 
 * **Acceptance Criteria**:
   - Aplikasi berjalan sepenuhnya bersih tanpa popup jendela hitam/CMD di desktop pengguna, baik saat boot awal maupun saat *cron* berjalan.

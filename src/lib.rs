@@ -1,3 +1,6 @@
+pub mod process;
+pub use process::{create_silent_command, run_silent_status, spawn_silent, SilentCommandExt, CREATE_NO_WINDOW};
+
 use std::fs;
 use std::io::{self, Cursor};
 use std::path::Path;

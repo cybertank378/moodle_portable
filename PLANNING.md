@@ -7,7 +7,7 @@ Moodle Portable adalah platform launcher berbasis Rust yang membungkus Nginx, PH
 - [ ] Desain struktur payload (Nginx, PHP-CGI, MariaDB, Pruned Moodle).
 - [x] Embed payload zip menggunakan `include_bytes!` pada Rust binary.
 - [x] Implementasi ekstraksi otomatis dan struktur folder runtime.
-- [ ] Penanganan silent execution (`CREATE_NO_WINDOW`) untuk seluruh daemon.
+- [x] Penanganan silent execution (`CREATE_NO_WINDOW`) untuk seluruh daemon.
 
 ## Phase 2: Dynamic Networking & Automated Setup (Week 2)
 - [ ] Deteksi IP address LAN dinamis saat boot.
