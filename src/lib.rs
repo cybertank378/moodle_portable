@@ -1,6 +1,12 @@
+pub mod database;
 pub mod process;
 pub mod security;
 
+pub use database::{
+    bootstrap_mariadb, create_database, create_database_with_params, ensure_my_ini,
+    generate_my_ini, start_mariadb, wait_for_mariadb_ready, MariaDbPaths, DEFAULT_DB_NAME,
+    DEFAULT_MARIADB_PORT, DEFAULT_READY_TIMEOUT,
+};
 pub use process::{create_silent_command, run_silent_status, spawn_silent, SilentCommandExt, CREATE_NO_WINDOW};
 pub use security::{generate_secure_nginx_conf, validate_nginx_security, SandboxLayout};
 
