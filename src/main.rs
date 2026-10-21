@@ -1,6 +1,6 @@
 use std::path::Path;
 use moodle_installer::{
-    provision_payload, PayloadMode, PayloadProvisionConfig, SandboxLayout, PAYLOAD_ZIP,
+    provision_payload, InstallationPaths, PayloadMode, PayloadProvisionConfig, PAYLOAD_ZIP,
 };
 
 fn main() {
@@ -51,8 +51,21 @@ fn main() {
         }
     }
 
-    // Initialize & verify sandbox isolation (NFR-04)
-    let sandbox = SandboxLayout::new(runtime_dir);
+    // Initialize & verify sandbox isolation via unified installation paths (NFR-04, Issue #24)
+    let paths = InstallationPaths::new(runtime_dir);
+    println!("Component Installation Paths:");
+    println!("  - Moodle Web Root:   {}", paths.moodle_dir.display());
+    println!("  - Moodledata Storage: {}", paths.moodledata_dir.display());
+    println!("  - Nginx Server:      {}", paths.nginx_dir.display());
+    println!("  - PHP Runtime:       {}", paths.php_dir.display());
+    println!("  - MariaDB Database:  {}", paths.mariadb_dir.display());
+
+    if let Err(err) = paths.validate_isolation() {
+        eprintln!("[ERROR] Directory layout validation failed: {}", err);
+        std::process::exit(1);
+    }
+
+    let sandbox = paths.to_sandbox_layout();
     if let Err(e) = sandbox.write_secure_nginx_conf(80) {
         eprintln!("[ERROR] Failed to initialize secure sandbox: {}", e);
         std::process::exit(1);

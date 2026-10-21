@@ -4,6 +4,7 @@ pub mod database;
 pub mod lifecycle;
 pub mod moodle;
 pub mod network;
+pub mod paths;
 pub mod payload;
 pub mod process;
 pub mod prune;
@@ -33,6 +34,7 @@ pub use network::{
     get_local_ip, get_service_url, is_internet_connected, is_internet_connected_with_target,
     resolve_local_ip, DEFAULT_FALLBACK_IP, DEFAULT_INTERNET_PROBE, DEFAULT_PROBE_TARGET,
 };
+pub use paths::InstallationPaths;
 pub use payload::{
     detect_payload_mode, ensure_placeholder_file, provision_payload, resolve_offline_payload_path,
     PayloadMode, PayloadProvisionConfig, ProvisionResult, DEFAULT_OFFLINE_PAYLOAD_NAME,
