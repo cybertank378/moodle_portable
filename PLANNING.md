@@ -16,7 +16,7 @@ Moodle Portable adalah platform launcher berbasis Rust yang membungkus Nginx, PH
 - [x] Implementasi Moodle Cron Job runner di background thread.
 
 ## Phase 3: Reliability & System Integration (Week 3)
-- [ ] Implementasi Signal Handling (Ctrl+C / Process Kill) untuk Graceful Shutdown MariaDB & Nginx.
+- [x] Implementasi Signal Handling (Ctrl+C / Process Kill) untuk Graceful Shutdown MariaDB & Nginx.
 - [ ] Penambahan Windows System Tray Icon (Start, Stop, Restart, Open Browser).
 - [ ] Pengujian konkurensi koneksi LAN pada skenario bandwidth terbatas.
 
