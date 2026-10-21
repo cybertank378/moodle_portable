@@ -7,6 +7,7 @@ pub mod network;
 pub mod paths;
 pub mod payload;
 pub mod process;
+pub mod progress;
 pub mod prune;
 pub mod security;
 
@@ -41,6 +42,11 @@ pub use payload::{
     PLACEHOLDER_FILENAME,
 };
 pub use process::{create_silent_command, run_silent_status, spawn_silent, SilentCommandExt, CREATE_NO_WINDOW};
+pub use progress::{
+    format_progress_bar, format_progress_status, parse_install_dir_from_args,
+    resolve_target_directory, validate_target_directory, InstallStage, ProgressEvent,
+    ProgressTracker, DEFAULT_RUNTIME_DIR, ENV_INSTALL_DIR,
+};
 pub use security::{generate_secure_nginx_conf, validate_nginx_security, SandboxLayout};
 
 use std::fs;
