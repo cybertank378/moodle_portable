@@ -132,6 +132,15 @@ Expand-Archive -Path $Downloads["nginx"].File -DestinationPath $tempNginx -Force
 $nginxFolder = Get-ChildItem -Path $tempNginx -Directory | Select-Object -First 1
 Move-Item -Path $nginxFolder.FullName -Destination $NginxStaging
 Remove-Item -Path $tempNginx -Recurse -Force
+
+# Create logs and temp directories required by Nginx
+$nginxLogs = Join-Path $NginxStaging "logs"
+$nginxTemp = Join-Path $NginxStaging "temp"
+New-Item -ItemType Directory -Path $nginxLogs -Force | Out-Null
+New-Item -ItemType Directory -Path $nginxTemp -Force | Out-Null
+Set-Content -Path (Join-Path $nginxLogs ".gitkeep") -Value "" -Encoding utf8
+Set-Content -Path (Join-Path $nginxTemp ".gitkeep") -Value "" -Encoding utf8
+
 Write-Host "     Nginx extracted to: $NginxStaging" -ForegroundColor Green
 
 # 3.2 PHP 8.2 x64
@@ -231,6 +240,20 @@ foreach ($target in $mariaPruneTargets) {
 }
 Write-Host "     MariaDB extracted and optimized." -ForegroundColor Green
 
+# 3.3.1 Pre-initialize MariaDB system data directory
+Write-Host "  -> Pre-initializing MariaDB system tables..." -ForegroundColor White
+$mariaDataDir = Join-Path $MariaDbStaging "data"
+if (!(Test-Path $mariaDataDir)) {
+    New-Item -ItemType Directory -Path $mariaDataDir -Force | Out-Null
+}
+$installDbExe = Join-Path $MariaDbStaging "bin\mysql_install_db.exe"
+if (Test-Path $installDbExe) {
+    & $installDbExe "--datadir=$mariaDataDir" "--default-storage-engine=InnoDB" | Out-Null
+    Write-Host "     MariaDB system data pre-initialized successfully." -ForegroundColor Green
+} else {
+    Write-Warning "mysql_install_db.exe not found in $MariaDbStaging\bin, skipping pre-initialization."
+}
+
 # 3.4 Moodle 5.0.11
 Write-Host "  -> Extracting Moodle 5.0.11..." -ForegroundColor White
 $tempMoodle = Join-Path $StagingPath "temp_moodle"
@@ -247,7 +270,7 @@ if (Test-Path $tempMoodle) {
 Write-Host "     Moodle extracted." -ForegroundColor Green
 
 # --- 4. PRUNE MOODLE (NFR-03) ---
-Write-Host "`n[4/5] Pruning Moodle Core (scripts/prune_moodle.ps1)..." -ForegroundColor Yellow
+Write-Host "`n[4/6] Pruning Moodle Core (scripts/prune_moodle.ps1)..." -ForegroundColor Yellow
 $pruneScript = Join-Path $ProjectRoot "scripts/prune_moodle.ps1"
 if (Test-Path $pruneScript) {
     & $pruneScript -MoodlePath $MoodleStaging
@@ -255,8 +278,56 @@ if (Test-Path $pruneScript) {
     Write-Warning "Prune script not found at $pruneScript, skipping Moodle pruning."
 }
 
+# --- 4.1 COMPREHENSIVE PACKAGE COMPLETENESS VERIFICATION ---
+Write-Host "`nVerifying Complete Package Integrity (Zero Missing Components)..." -ForegroundColor Yellow
+$RequiredItems = @(
+    @{ Path = Join-Path $MoodleStaging "index.php"; Label = "Moodle Web Root (index.php)" },
+    @{ Path = Join-Path $MoodleStaging "version.php"; Label = "Moodle Version Definition (version.php)" },
+    @{ Path = Join-Path $MoodleStaging "admin\cli\install.php"; Label = "Moodle CLI Installer (admin/cli/install.php)" },
+    @{ Path = Join-Path $PhpStaging "php.exe"; Label = "PHP 8.2 CLI Binary (php.exe)" },
+    @{ Path = Join-Path $PhpStaging "php-cgi.exe"; Label = "PHP 8.2 FastCGI Binary (php-cgi.exe)" },
+    @{ Path = Join-Path $PhpStaging "php.ini"; Label = "PHP Configuration (php.ini)" },
+    @{ Path = Join-Path $PhpStaging "ext\php_curl.dll"; Label = "PHP Extension: curl" },
+    @{ Path = Join-Path $PhpStaging "ext\php_intl.dll"; Label = "PHP Extension: intl" },
+    @{ Path = Join-Path $PhpStaging "ext\php_mbstring.dll"; Label = "PHP Extension: mbstring" },
+    @{ Path = Join-Path $PhpStaging "ext\php_mysqli.dll"; Label = "PHP Extension: mysqli" },
+    @{ Path = Join-Path $PhpStaging "ext\php_openssl.dll"; Label = "PHP Extension: openssl" },
+    @{ Path = Join-Path $PhpStaging "ext\php_pdo_mysql.dll"; Label = "PHP Extension: pdo_mysql" },
+    @{ Path = Join-Path $PhpStaging "ext\php_sodium.dll"; Label = "PHP Extension: sodium" },
+    @{ Path = Join-Path $PhpStaging "ext\php_zip.dll"; Label = "PHP Extension: zip" },
+    @{ Path = Join-Path $PhpStaging "ext\php_fileinfo.dll"; Label = "PHP Extension: fileinfo" },
+    @{ Path = Join-Path $PhpStaging "ext\php_gd.dll"; Label = "PHP Extension: gd" },
+    @{ Path = Join-Path $NginxStaging "nginx.exe"; Label = "Nginx Web Server Binary (nginx.exe)" },
+    @{ Path = Join-Path $NginxStaging "conf\mime.types"; Label = "Nginx MIME Types Configuration" },
+    @{ Path = Join-Path $NginxStaging "conf\fastcgi_params"; Label = "Nginx FastCGI Parameters" },
+    @{ Path = Join-Path $MariaDbStaging "bin\mariadbd.exe"; Fallback = Join-Path $MariaDbStaging "bin\mysqld.exe"; Label = "MariaDB Daemon Binary" },
+    @{ Path = Join-Path $MariaDbStaging "bin\mariadb.exe"; Fallback = Join-Path $MariaDbStaging "bin\mysql.exe"; Label = "MariaDB CLI Client" },
+    @{ Path = Join-Path $MariaDbStaging "bin\mariadb-admin.exe"; Fallback = Join-Path $MariaDbStaging "bin\mysqladmin.exe"; Label = "MariaDB Admin Utility" },
+    @{ Path = Join-Path $MariaDbStaging "share\english\errmsg.sys"; Label = "MariaDB Error Messages (errmsg.sys)" },
+    @{ Path = Join-Path $MoodledataStaging ".gitkeep"; Label = "Moodledata Directory" }
+)
+
+$MissingCount = 0
+foreach ($item in $RequiredItems) {
+    $exists = Test-Path $item.Path
+    if (-not $exists -and $item.Fallback) {
+        $exists = Test-Path $item.Fallback
+    }
+    if ($exists) {
+        Write-Host "  [OK] $($item.Label)" -ForegroundColor Green
+    } else {
+        Write-Host "  [MISSING] $($item.Label): $($item.Path)" -ForegroundColor Red
+        $MissingCount++
+    }
+}
+
+if ($MissingCount -gt 0) {
+    throw "Package verification failed: $MissingCount critical components are missing from staging! Cannot build container."
+}
+Write-Host "  All required packages and components verified 100% complete!" -ForegroundColor Green
+
 # --- 5. COMPRESS INTO PAYLOAD.ZIP ---
-Write-Host "`n[5/5] Compressing Staging into $OutputPath..." -ForegroundColor Yellow
+Write-Host "`n[5/6] Compressing Staging into $OutputPath..." -ForegroundColor Yellow
 if (Test-Path $OutputPath) {
     Remove-Item -Path $OutputPath -Force
 }
