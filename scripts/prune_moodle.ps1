@@ -39,16 +39,7 @@ $InitialSizeMB = [math]::Round($InitialSize / 1MB, 2)
 Write-Host "Initial Moodle folder size: $InitialSizeMB MB ($InitialSize bytes)" -ForegroundColor White
 
 $Targets = @(
-    # Unneeded activity modules
-    "mod/forum",
-    "mod/chat",
-    "mod/wiki",
-    "mod/glossary",
-    "mod/workshop",
-    "mod/survey",
-    "mod/scorm",
-
-    # Testing & development frameworks
+    # Testing, CI, & development frameworks (never needed at runtime)
     ".git",
     ".github",
     "node_modules",
@@ -59,8 +50,9 @@ $Targets = @(
     ".stylelintrc",
     ".eslintrc",
     ".travis.yml",
+    ".editorconfig",
 
-    # Documentation & text files
+    # Documentation & license text files
     "README.txt",
     "TRADEMARK.txt",
     "COPYING.txt"
