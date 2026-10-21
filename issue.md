@@ -121,9 +121,9 @@ Dokumen ini memuat seluruh *Epic*, *Issue*, dan *Atomic Tasks* untuk pengembanga
   Moodle memerlukan eksekusi `admin/cli/cron.php` secara berkala untuk memproses tugas latar belakang (notifikasi, penilaian, pembersihan cache).
 
 * **Tasks**:
-  - [ ] Buat fungsi `start_moodle_cron(base_dir: String)` yang berjalan di dalam `thread::spawn`.
-  - [ ] Implementasikan *infinite loop* dengan interval `thread::sleep(Duration::from_secs(60))`.
-  - [ ] Panggil `php.exe admin/cli/cron.php` dengan flag `CREATE_NO_WINDOW`.
+  - [x] Buat fungsi `start_moodle_cron(base_dir: String)` yang berjalan di dalam `thread::spawn`.
+  - [x] Implementasikan *infinite loop* dengan interval `thread::sleep(Duration::from_secs(60))`.
+  - [x] Panggil `php.exe admin/cli/cron.php` dengan flag `CREATE_NO_WINDOW`.
 
 * **Acceptance Criteria**:
   - Task cron Moodle tereksekusi secara berkala setiap 60 detik di background thread tanpa membebankan main thread.
