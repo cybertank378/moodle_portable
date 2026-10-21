@@ -12,12 +12,14 @@ fn print_help() {
     println!("  moodle_installer.exe [OPTIONS]");
     println!();
     println!("Options:");
-    println!("  -d, --install-dir <PATH>   Custom directory to install/extract runtime (default: ./runtime)");
-    println!("  -t, --target <PATH>        Alias for --install-dir");
-    println!("  -h, --help                 Display this help information");
+    println!("  -d, --install-dir <PATH>              Custom directory to install/extract runtime (default: ./runtime)");
+    println!("  -t, --target <PATH>                   Alias for --install-dir");
+    println!("      --pack-container <ZIP> <PAK>      Pack a .zip archive into an encrypted .pak container");
+    println!("      --verify-container <PAK>          Verify integrity of an encrypted .pak container");
+    println!("  -h, --help                            Display this help information");
     println!();
     println!("Environment Variables:");
-    println!("  MOODLE_INSTALL_DIR         Fallback installation directory if CLI option is omitted");
+    println!("  MOODLE_INSTALL_DIR                    Fallback installation directory if CLI option is omitted");
 }
 
 fn main() {
@@ -25,6 +27,51 @@ fn main() {
     if args.iter().any(|a| a == "-h" || a == "--help") {
         print_help();
         return;
+    }
+
+    if let Some(pos) = args.iter().position(|a| a == "--pack" || a == "--pack-container") {
+        if pos + 2 < args.len() {
+            let input_zip = std::path::Path::new(&args[pos + 1]);
+            let output_pak = std::path::Path::new(&args[pos + 2]);
+            match moodle_installer::pack_file_to_container(input_zip, output_pak, None) {
+                Ok(bytes) => {
+                    println!("[OK] Encrypted container successfully generated: {} ({} bytes)", output_pak.display(), bytes);
+                    return;
+                }
+                Err(e) => {
+                    eprintln!("[ERROR] Failed to pack container: {}", e);
+                    process::exit(1);
+                }
+            }
+        } else {
+            eprintln!("[ERROR] Usage: moodle_installer.exe --pack-container <input.zip> <output.pak>");
+            process::exit(1);
+        }
+    }
+
+    if let Some(pos) = args.iter().position(|a| a == "--verify-container") {
+        if pos + 1 < args.len() {
+            let pak_path = std::path::Path::new(&args[pos + 1]);
+            match std::fs::read(pak_path) {
+                Ok(bytes) => match moodle_installer::unpack_container_bytes(&bytes, None) {
+                    Ok(plain) => {
+                        println!("[OK] Container is authentic and valid! Decrypted payload size: {} bytes", plain.len());
+                        return;
+                    }
+                    Err(e) => {
+                        eprintln!("[ERROR] Container verification failed: {}", e);
+                        process::exit(1);
+                    }
+                },
+                Err(e) => {
+                    eprintln!("[ERROR] Failed to read container file: {}", e);
+                    process::exit(1);
+                }
+            }
+        } else {
+            eprintln!("[ERROR] Usage: moodle_installer.exe --verify-container <container.pak>");
+            process::exit(1);
+        }
     }
 
     println!("==========================================================");

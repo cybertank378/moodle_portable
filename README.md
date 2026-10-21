@@ -32,7 +32,8 @@
 - **Zero-Configuration & Portable**: Berjalan langsung dari flashdisk, hard disk eksternal, atau folder lokal tanpa perlu menginstal server web terpisah.
 - **Dual-Mode Payload Provisioning**:
   - *Online Mode*: Mengunduh paket runtime resmi saat koneksi internet aktif.
-  - *Offline Mode*: Bekerja luring penuh menggunakan berkas lokal `offline_payload.zip` dan file penanda `placeholder.txt`.
+  - *Offline Mode*: Bekerja luring penuh menggunakan wadah terenkripsi `offline_payload.pak` (atau `offline_payload.zip`).
+- **Wadah Biner Terenkripsi Anti-Tamper (`.pak`)**: Menggantikan berkas zip polos dengan wadah biner terenkripsi berkepala `AKSA` dan verifikasi integritas SHA-256. Berkas ini tidak dapat diekstrak oleh utilitas arsip umum (WinRAR, 7-Zip, File Explorer) dan otomatis mendeteksi manipulasi data pihak ketiga.
 - **Visual Installation Progress Bar**: Menampilkan indikator kemajuan instalasi (0% s/d 100%) dengan 5 tahapan berurutan secara dinamis pada konsol.
 - **Custom Installation Directory**: Mendukung pemilihan direktori target instalasi via argumen CLI `--install-dir <PATH>` atau variabel lingkungan `MOODLE_INSTALL_DIR`.
 - **Dynamic LAN IP Routing**: Akses instan dari jaringan lokal (Wi-Fi/LAN) tanpa konfigurasi DNS berkat dynamic HTTP_HOST patcher.
@@ -185,6 +186,8 @@ moodle_installer.exe [OPTIONS]
 | :--- | :--- | :--- |
 | `-d`, `--install-dir` | `<PATH>` | Menentukan lokasi direktori target instalasi kustom (default: `./runtime`). |
 | `-t`, `--target` | `<PATH>` | Alias untuk `--install-dir`. |
+| `--pack-container` | `<ZIP> <PAK>` | Mengemas berkas `.zip` biasa menjadi wadah biner terenkripsi anti-tamper `.pak`. |
+| `--verify-container` | `<PAK>` | Memverifikasi tanda tangan header dan keaslian checksum SHA-256 wadah `.pak`. |
 | `-h`, `--help` | - | Menampilkan petunjuk opsi penggunaan CLI. |
 
 ### Contoh Penggunaan Direktori Kustom:
@@ -194,6 +197,12 @@ moodle_installer.exe [OPTIONS]
 
 # Atau menggunakan flag singkat:
 .\moodle_installer.exe -d "D:\LMS"
+
+# Mengemas arsip zip menjadi wadah terenkripsi .pak:
+.\moodle_installer.exe --pack-container "payload.zip" "payload.pak"
+
+# Memverifikasi integritas wadah .pak:
+.\moodle_installer.exe --verify-container "payload.pak"
 ```
 
 ### Variabel Lingkungan:
@@ -221,13 +230,14 @@ Untuk mematikan seluruh servis secara aman tanpa merusak integritas database Mar
 ```text
 moodle_installer/
 ├── scripts/
-│   ├── build_payload.ps1    # Skrip otomatisasi download, konfigurasi, & build payload.zip
+│   ├── build_payload.ps1    # Skrip otomatisasi download, konfigurasi, build payload.zip & payload.pak
 │   └── prune_moodle.ps1     # Skrip pemangkas modul non-esensial Moodle
 ├── src/
 │   ├── browser.rs           # Peluncur browser default otomatis
+│   ├── container.rs         # Wadah biner terenkripsi AKSA .pak & anti-tamper SHA-256
 │   ├── cron.rs              # In-process background cron job scheduler
 │   ├── database.rs          # MariaDB bootstrap, my.ini generator, & TCP probe
-│   ├── lib.rs               # Library root & embedded payload zip extractor
+│   ├── lib.rs               # Library root & embedded payload zip/pak extractor
 │   ├── lifecycle.rs         # Graceful shutdown manager (Ctrl+C signal handling)
 │   ├── main.rs              # Entry point CLI executable & startup orchestration
 │   ├── moodle.rs            # Unattended CLI installer & dynamic wwwroot patcher
@@ -240,7 +250,7 @@ moodle_installer/
 │   └── security.rs          # Sandbox runtime isolation & secure nginx.conf generator
 ├── app_icon.ico             # Ikon biner resmi aplikasi Windows
 ├── build.rs                 # Integrasi resource metadata Windows PE (winres)
-├── Cargo.toml               # Konfigurasi dependensi proyek Rust
+├── Cargo.toml               # Konfigurasi dependensi proyek Rust (zip, ctrlc, sha2)
 └── README.md                # Dokumentasi lengkap proyek
 ```
 

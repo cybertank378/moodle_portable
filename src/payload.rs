@@ -4,6 +4,10 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 use zip::ZipArchive;
 
+use crate::container::{
+    is_aksa_container, unpack_container_to_dir, DEFAULT_CONTAINER_NAME,
+    DEFAULT_OFFLINE_CONTAINER_NAME,
+};
 use crate::network::is_internet_connected;
 use crate::prune::{prune_moodle, PruneReport};
 
@@ -81,7 +85,7 @@ pub fn detect_payload_mode(config: &PayloadProvisionConfig) -> PayloadMode {
     }
 }
 
-/// Finds the path to the offline payload zip archive if it exists.
+/// Finds the path to the offline payload archive (preferring .pak container, then .zip).
 pub fn resolve_offline_payload_path(config: &PayloadProvisionConfig) -> Option<PathBuf> {
     // 1. Explicit path specified in config
     if let Some(ref path) = config.offline_payload_path {
@@ -90,16 +94,22 @@ pub fn resolve_offline_payload_path(config: &PayloadProvisionConfig) -> Option<P
         }
     }
 
-    // 2. Relative to runtime dir (runtime/offline_payload.zip)
-    let in_runtime = config.runtime_dir.join(DEFAULT_OFFLINE_PAYLOAD_NAME);
-    if in_runtime.is_file() {
-        return Some(in_runtime);
-    }
+    // 2. Relative to runtime dir (prefer .pak over .zip)
+    let candidates = [
+        config.runtime_dir.join(DEFAULT_OFFLINE_CONTAINER_NAME),
+        config.runtime_dir.join(DEFAULT_CONTAINER_NAME),
+        PathBuf::from(DEFAULT_OFFLINE_CONTAINER_NAME),
+        PathBuf::from(DEFAULT_CONTAINER_NAME),
+        config.runtime_dir.join(DEFAULT_OFFLINE_PAYLOAD_NAME),
+        config.runtime_dir.join("payload.zip"),
+        PathBuf::from(DEFAULT_OFFLINE_PAYLOAD_NAME),
+        PathBuf::from("payload.zip"),
+    ];
 
-    // 3. Project root (./offline_payload.zip)
-    let in_root = PathBuf::from(DEFAULT_OFFLINE_PAYLOAD_NAME);
-    if in_root.is_file() {
-        return Some(in_root);
+    for candidate in candidates {
+        if candidate.is_file() {
+            return Some(candidate);
+        }
     }
 
     None
@@ -125,6 +135,16 @@ pub fn ensure_placeholder_file<P: AsRef<Path>>(
     );
     fs::write(&placeholder_path, content)?;
     Ok(placeholder_path)
+}
+
+/// Unpacks a byte buffer (either AKSA secure container or zip) into target directory.
+pub fn unpack_payload_buffer_to_dir(bytes: &[u8], target_dir: &Path) -> io::Result<usize> {
+    if is_aksa_container(bytes) {
+        unpack_container_to_dir(bytes, target_dir, None)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Failed to unpack secure container: {e}")))
+    } else {
+        unzip_buffer_to_dir(bytes, target_dir)
+    }
 }
 
 /// Unzips a zip archive byte buffer into a target directory with ZipSlip protection.
@@ -163,7 +183,7 @@ pub fn unzip_buffer_to_dir(bytes: &[u8], target_dir: &Path) -> io::Result<usize>
     Ok(count)
 }
 
-/// Main entrypoint for Dual-Mode Payload Provisioning (Issue #21).
+/// Main entrypoint for Dual-Mode Payload Provisioning (Issue #21 & #31).
 pub fn provision_payload(
     config: &PayloadProvisionConfig,
     embedded_fallback: &[u8],
@@ -192,24 +212,29 @@ pub fn provision_payload(
     let (extracted_count, source_label) = match mode {
         PayloadMode::Online => {
             // In online mode, unpack the embedded or downloaded package
-            let count = unzip_buffer_to_dir(embedded_fallback, &config.runtime_dir)?;
-            (count, "online-download-package")
+            let count = unpack_payload_buffer_to_dir(embedded_fallback, &config.runtime_dir)?;
+            (count, "online-download-package".to_string())
         }
         PayloadMode::Offline => {
-            // Check for offline_payload.zip on disk
-            if let Some(offline_zip) = resolve_offline_payload_path(config) {
-                let zip_bytes = fs::read(&offline_zip)?;
-                let count = unzip_buffer_to_dir(&zip_bytes, &config.runtime_dir)?;
-                (count, "offline_payload.zip")
+            // Check for offline payload archive on disk (.pak preferred, or .zip)
+            if let Some(offline_archive) = resolve_offline_payload_path(config) {
+                let payload_bytes = fs::read(&offline_archive)?;
+                let count = unpack_payload_buffer_to_dir(&payload_bytes, &config.runtime_dir)?;
+                let label = offline_archive
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("offline_payload")
+                    .to_string();
+                (count, label)
             } else {
-                let count = unzip_buffer_to_dir(embedded_fallback, &config.runtime_dir)?;
-                (count, "embedded-offline-payload")
+                let count = unpack_payload_buffer_to_dir(embedded_fallback, &config.runtime_dir)?;
+                (count, "embedded-offline-payload".to_string())
             }
         }
     };
 
     // Ensure placeholder.txt is present in the target directory
-    let placeholder = ensure_placeholder_file(&config.runtime_dir, mode, source_label)?;
+    let placeholder = ensure_placeholder_file(&config.runtime_dir, mode, &source_label)?;
 
     // Prune the extracted moodle directory if requested
     let mut prune_report = None;
@@ -342,6 +367,38 @@ mod tests {
         assert_eq!(result.extracted_files, 0);
         assert!(temp_dir.join(PLACEHOLDER_FILENAME).exists());
 
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_provision_offline_pak_container() {
+        use crate::container::pack_container;
+
+        let temp_dir = std::env::temp_dir().join(format!("offline_pak_test_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        let zip_bytes = create_test_zip_buffer();
+        let pak_bytes = pack_container(&zip_bytes, None);
+        let offline_pak_file = temp_dir.join("offline_payload.pak");
+        fs::create_dir_all(&temp_dir).unwrap();
+        fs::write(&offline_pak_file, &pak_bytes).unwrap();
+
+        let target_dir = temp_dir.join("runtime");
+        let config = PayloadProvisionConfig::new(&target_dir)
+            .with_offline_payload(&offline_pak_file)
+            .with_force_mode(PayloadMode::Offline);
+
+        let result = provision_payload(&config, &[]).unwrap();
+        assert_eq!(result.mode, PayloadMode::Offline);
+        assert!(!result.was_skipped);
+        assert!(result.placeholder_path.exists());
+
+        let placeholder = target_dir.join(PLACEHOLDER_FILENAME);
+        assert!(placeholder.exists());
+        let content = fs::read_to_string(&placeholder).unwrap();
+        assert!(content.contains("offline_payload.pak"));
+
+        assert!(target_dir.join("moodle/index.php").exists());
         let _ = fs::remove_dir_all(&temp_dir);
     }
 }

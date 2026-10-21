@@ -1,4 +1,5 @@
 pub mod browser;
+pub mod container;
 pub mod cron;
 pub mod database;
 pub mod lifecycle;
@@ -12,6 +13,12 @@ pub mod prune;
 pub mod security;
 
 pub use browser::{build_open_browser_command, open_browser, open_moodle_browser};
+pub use container::{
+    is_aksa_container, pack_container, pack_file_to_container, unpack_container_bytes,
+    unpack_container_to_dir, ContainerError, ContainerHeader, CONTAINER_MAGIC,
+    CONTAINER_VERSION, DEFAULT_CONTAINER_KEY, DEFAULT_CONTAINER_NAME,
+    DEFAULT_OFFLINE_CONTAINER_NAME, FLAG_ENCRYPTED, HEADER_SIZE,
+};
 pub use prune::{calculate_dir_size, prune_moodle, remove_test_directories, PruneReport, PRUNE_TARGETS};
 pub use cron::{
     build_cron_command, run_cron_once, spawn_scheduler, start_moodle_cron,
@@ -95,43 +102,48 @@ pub fn extract_payload_from_bytes(payload_bytes: &[u8], target_dir: &Path) -> io
 
     fs::create_dir_all(target_dir)?;
 
-    let reader = Cursor::new(payload_bytes);
-    let mut archive = ZipArchive::new(reader)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Failed to read zip archive: {e}")))?;
+    let extracted_count = if is_aksa_container(payload_bytes) {
+        unpack_container_to_dir(payload_bytes, target_dir, None)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Failed to unpack secure container: {e}")))?
+    } else {
+        let reader = Cursor::new(payload_bytes);
+        let mut archive = ZipArchive::new(reader)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Failed to read zip archive: {e}")))?;
 
-    let mut extracted_count = 0;
+        let mut count = 0;
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Invalid zip entry {i}: {e}")))?;
 
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Invalid zip entry {i}: {e}")))?;
+            // Guard against Zip Slip path traversal attacks
+            let outpath = match file.enclosed_name() {
+                Some(path) => target_dir.join(path),
+                None => continue,
+            };
 
-        // Guard against Zip Slip path traversal attacks
-        let outpath = match file.enclosed_name() {
-            Some(path) => target_dir.join(path),
-            None => continue,
-        };
+            if file.is_dir() {
+                fs::create_dir_all(&outpath)?;
+            } else {
+                if let Some(parent) = outpath.parent() {
+                    if !parent.exists() {
+                        fs::create_dir_all(parent)?;
+                    }
+                }
+                let mut outfile = fs::File::create(&outpath)?;
+                io::copy(&mut file, &mut outfile)?;
+                count += 1;
+            }
 
-        if file.is_dir() {
-            fs::create_dir_all(&outpath)?;
-        } else {
-            if let Some(parent) = outpath.parent() {
-                if !parent.exists() {
-                    fs::create_dir_all(parent)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Some(mode) = file.unix_mode() {
+                    let _ = fs::set_permissions(&outpath, fs::Permissions::from_mode(mode));
                 }
             }
-            let mut outfile = fs::File::create(&outpath)?;
-            io::copy(&mut file, &mut outfile)?;
-            extracted_count += 1;
         }
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Some(mode) = file.unix_mode() {
-                let _ = fs::set_permissions(&outpath, fs::Permissions::from_mode(mode));
-            }
-        }
-    }
+        count
+    };
 
     let duration_ms = start.elapsed().as_millis();
     Ok(ExtractionResult::Extracted {
