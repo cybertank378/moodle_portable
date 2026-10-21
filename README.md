@@ -2,149 +2,63 @@
 
 [![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20x64-blue.svg)]()
-[![Release](https://img.shields.io/badge/Release-v0.2.0--beta.1-brightgreen.svg)](https://github.com/cybertank378/moodle_portable/releases)
+[![Release](https://img.shields.io/badge/Release-v0.2.0--beta.1-brightgreen.svg)](https://github.com/cybertank378/moodle_portable/releases/tag/v0.2.0-beta.1)
 [![License](https://img.shields.io/badge/License-GPL--3.0-lightgrey.svg)]()
 
-**Moodle Portable** adalah *single-executable launcher* mandiri berbasis bahasa pemrograman **Rust (64-bit)** untuk sistem operasi Microsoft Windows. Aplikasi ini membungkus stack WNMP lengkap secara portabel dan *plug-and-play* tanpa memerlukan konfigurasi manual rumit ataupun hak akses Administrator (UAC).
+**Moodle Portable** adalah aplikasi Learning Management System (LMS) berbasis **Moodle 5.0** yang dirancang agar dapat langsung berjalan secara portabel pada Microsoft Windows (64-bit). 
+
+Seluruh tumpukan server (**Nginx**, **PHP 8.2**, **MariaDB**, dan **Moodle Core**) sudah dikemas menjadi satu kesatuan mandiri. Anda **tidak perlu menginstal XAMPP, WampServer, Docker, ataupun perangkat lunak tambahan lainnya**, dan **tidak membutuhkan hak Administrator (UAC)**.
 
 ---
 
 ## 📋 Daftar Isi
-1. [Fitur Utama](#-fitur-utama)
-2. [Komponen Stack 64-bit](#-komponen-stack-64-bit)
-3. [Kebutuhan Sistem (Prerequisites)](#-kebutuhan-sistem-prerequisites)
-4. [Penjelasan Wadah Terenkripsi `payload.pak` & Stub `payload.zip`](#-penjelasan-wadah-terenkripsi-payloadpak--stub-payloadzip)
-5. [Panduan Langkah demi Langkah](#-panduan-langkah-demi-langkah)
-   - [Langkah 1: Kloning Repositori](#langkah-1-kloning-repositori)
-   - [Langkah 2: Rakit `payload.pak` Riil (Full Packages)](#langkah-2-rakit-payloadpak-riil-full-packages)
-   - [Langkah 3: Kompilasi Executable (Release Build)](#langkah-3-kompilasi-executable-release-build)
-   - [Langkah 4: Jalankan Aplikasi](#langkah-4-jalankan-aplikasi)
-   - [Langkah 5: Akses Moodle Melalui Browser](#langkah-5-akses-moodle-melalui-browser)
-6. [Opsi Perintah CLI (Command Line Options)](#-opsi-perintah-cli-command-line-options)
-7. [Penghentian Layanan Aman (Graceful Shutdown)](#-penghentian-layanan-aman-graceful-shutdown)
-8. [Struktur Kode Sumber](#-struktur-kode-sumber)
-9. [Lisensi](#-lisensi)
+1. [Panduan Pengguna Akhir (End-User Quick Start)](#-panduan-pengguna-akhir-end-user-quick-start)
+   - [Langkah 1: Unduh Paket Rilis](#langkah-1-unduh-paket-rilis)
+   - [Langkah 2: Ekstrak Berkas Zip](#langkah-2-ekstrak-berkas-zip)
+   - [Langkah 3: Jalankan `moodle_installer.exe`](#langkah-3-jalankan-moodle_installerexe)
+   - [Langkah 4: Akses LMS Melalui Browser](#langkah-4-akses-lms-melalui-browser)
+   - [Langkah 5: Cara Menutup Aplikasi dengan Aman](#langkah-5-cara-menutup-aplikasi-dengan-aman)
+2. [Akses Multi-Perangkat (HP / Laptop Siswa via Wi-Fi/LAN)](#-akses-multi-perangkat-hp--laptop-siswa-via-wi-filan)
+3. [Portabilitas & Pencadangan (Backup ke Flashdisk)](#-portabilitas--pencadangan-backup-ke-flashdisk)
+4. [Tanya Jawab & Pemecahan Masalah (Troubleshooting)](#-tanya-jawab--pemecahan-masalah-troubleshooting)
+5. [Fitur Unggulan](#-fitur-unggulan)
+6. [Komponen Stack 64-bit](#-komponen-stack-64-bit)
+7. [Kebutuhan Sistem (System Requirements)](#-kebutuhan-sistem-system-requirements)
+8. [Opsi Baris Perintah CLI (Tingkat Lanjut)](#-opsi-baris-perintah-cli-tingkat-lanjut)
+9. [Panduan Pengembang (Build from Source)](#-panduan-pengembang-build-from-source)
+10. [Struktur Kode Sumber & Lisensi](#-struktur-kode-sumber--lisensi)
 
 ---
 
-## 🌟 Fitur Utama
+## 🚀 Panduan Pengguna Akhir (End-User Quick Start)
 
-- **Zero-Configuration & Portable**: Berjalan langsung dari flashdisk, hard disk eksternal, atau folder lokal tanpa perlu menginstal server web terpisah.
-- **Dual-Mode Payload Provisioning**:
-  - *Online Mode*: Mengunduh paket runtime resmi saat koneksi internet aktif.
-  - *Offline Mode*: Bekerja luring penuh menggunakan wadah terenkripsi `offline_payload.pak` atau `payload.pak`.
-- **Wadah Biner Terenkripsi Anti-Tamper (`.pak`)**: Menggantikan berkas zip polos dengan wadah biner khusus berkepala `AKSA`, enkripsi stream CTR, dan verifikasi integritas SHA-256. Berkas ini tidak dapat dibuka oleh WinRAR / 7-Zip dan otomatis mendeteksi modifikasi atau pemalsuan data.
-- **Visual Installation Progress Bar**: Menampilkan indikator kemajuan instalasi (0% s/d 100%) dengan 5 tahapan berurutan secara dinamis pada konsol.
-- **Custom Installation Directory**: Mendukung pemilihan direktori target instalasi via argumen CLI `--install-dir <PATH>` atau variabel lingkungan `MOODLE_INSTALL_DIR`.
-- **Dynamic LAN IP Routing**: Akses instan dari jaringan lokal (Wi-Fi/LAN) tanpa konfigurasi DNS berkat dynamic HTTP_HOST patcher.
-- **Keamanan & Isolasi Direktori (NFR-04)**: Direktori sensitif `moodledata` terisolasi ketat di luar direktori web root Nginx.
-- **Background Cron Scheduler**: Thread latar belakang mandiri yang mengeksekusi cron Moodle setiap 60 detik tanpa memblokir thread utama.
-- **Graceful Shutdown Manager**: Menangani sinyal `Ctrl + C` secara tertib untuk mematikan Nginx, melakukan flush buffer database MariaDB, dan mematikan worker PHP secara aman.
-- **Pre-Initialized Database & Core Activity Plugins**: Tabel sistem MariaDB telah terinisialisasi secara otomatis, dan semua modul aktivitas inti Moodle (forum, assignment, quiz, wiki, dll.) dipertahankan 100% lengkap.
+Panduan ini ditujukan bagi guru, pengajar, proktor ujian, administrator sekolah, atau pengguna umum yang ingin langsung menjalankan Moodle tanpa ribet.
 
----
+### Langkah 1: Unduh Paket Rilis
+Kunjungi halaman rilis resmi kami di GitHub:
+👉 **[Unduh Moodle Portable v0.2.0-beta.1](https://github.com/cybertank378/moodle_portable/releases/tag/v0.2.0-beta.1)**
 
-## 📦 Komponen Stack 64-bit
+Pilih dan unduh berkas arsip zip:
+- **`moodle-portable-v0.2.0-beta.1-windows-x64.zip`** (berisi launcher, wadah terenkripsi `payload.pak`, dan dokumentasi).
 
-Seluruh modul dan executable beroperasi pada arsitektur **murni 64-bit (x86_64 / AMD64)**:
-
-| Komponen | Versi | Sumber Resmi |
-| :--- | :--- | :--- |
-| **Moodle Core** | v5.0.11 | [Moodle.org Official Stable 500](https://packaging.moodle.org/stable500/moodle-5.0.11.zip) |
-| **PHP Runtime** | 8.2.12 x64 | [PHP for Windows (Win32-vs16-x64)](https://windows.php.net/downloads/releases/archives/php-8.2.12-Win32-vs16-x64.zip) |
-| **Nginx Server** | 1.31.7 | [Nginx.org Official Windows Build](https://nginx.org/download/nginx-1.31.7.zip) |
-| **MariaDB** | 13.0.2 x64 | [MariaDB Winx64 Mirror](https://linux.domainesia.com/mariadb///mariadb-13.0.2/winx64-packages/mariadb-13.0.2-winx64.zip) |
+> [!TIP]
+> Anda juga dapat mengunduh berkas `moodle_installer.exe` dan `payload.pak` secara terpisah, asalkan keduanya disimpan dalam folder yang sama.
 
 ---
 
-## 💻 Kebutuhan Sistem (Prerequisites)
-
-### Untuk Menjalankan Aplikasi (End-User):
-- **Sistem Operasi**: Windows 10 atau Windows 11 (64-bit).
-- **Arsitektur**: x86_64 / AMD64.
-- **RAM**: Minimal 2 GB (Disarankan 4 GB+).
-- **Ruang Disk Bebas**: Minimal 1 GB.
-- **Hak Akses**: Standard User (tidak membutuhkan hak Administrator).
-
-### Untuk Membangun dari Sumber / Build from Source (Developer):
-- **Rust Toolchain**: Versi 1.85+ (Edition 2024), target `x86_64-pc-windows-msvc`.
-- **PowerShell**: Windows PowerShell 5.1+ atau PowerShell 7+ (`pwsh`).
-- **cURL**: Bawaan Windows 10/11.
-- **Git for Windows**.
+### Langkah 2: Ekstrak Berkas Zip
+1. Klik kanan pada berkas `moodle-portable-v0.2.0-beta.1-windows-x64.zip` yang telah diunduh.
+2. Pilih **Extract All...** (Ekstrak Semua).
+3. Tentukan lokasi folder tujuan (misal: di `D:\MoodlePortable`, Desktop, atau langsung di flashdisk eksternal).
+4. Klik **Extract**.
 
 ---
 
-## 💡 Penjelasan Wadah Terenkripsi `payload.pak` & Stub `payload.zip`
+### Langkah 3: Jalankan `moodle_installer.exe`
+1. Buka folder hasil ekstraksi.
+2. Klik dua kali pada file **`moodle_installer.exe`**.
+3. Jendela konsol akan muncul dan menampilkan visual *progress bar* kemajuan inisialisasi:
 
-> [!IMPORTANT]
-> **Mengapa file `payload.zip` di Git hanya berukuran ~1 KB (204 bytes)?**
-> 
-> Berkas runtime WNMP lengkap dan terverifikasi berukuran **209.1 MB**.
-> **GitHub melarang commit berkas di atas 100 MB** (`GH001`), sehingga berkas biner besar tidak disimpan langsung di Git repository.
-> 
-> Berkas `payload.zip` berukuran 1 KB di Git adalah **berkas stub** yang memungkinkan proyek dikloning secara cepat dan lulus seluruh *unit tests* (`cargo test`).
-> 
-> Untuk rilis produksi, runtime dikemas ke dalam **wadah biner terenkripsi `payload.pak` (209.1 MB)** yang dapat diunduh langsung dari [GitHub Releases](https://github.com/cybertank378/moodle_portable/releases) atau dirakit sendiri menggunakan skrip [`scripts/build_payload.ps1`](file:///d:/Project/moodle_installer/scripts/build_payload.ps1).
-
----
-
-## 🚀 Panduan Langkah demi Langkah
-
-### Jalur Praktis (End-User / Unduh Rilis):
-1. Buka [Halaman Rilis GitHub](https://github.com/cybertank378/moodle_portable/releases/tag/v0.2.0-beta.1).
-2. Unduh `moodle_installer.exe` dan `payload.pak` (atau arsip rilis zip).
-3. Letakkan `moodle_installer.exe` dan `payload.pak` dalam satu folder.
-4. Klik dua kali atau jalankan `.\moodle_installer.exe`. Engine akan otomatis memverifikasi dan mengekstrak runtime secara instan!
-
----
-
-### Jalur Pengembang (Build from Source):
-
-#### Langkah 1: Kloning Repositori
-Buka PowerShell dan kloning repositori proyek ini:
-```powershell
-git clone https://github.com/cybertank378/moodle_portable.git
-cd moodle_installer
-```
-
----
-
-#### Langkah 2: Rakit `payload.pak` Riil (Full Packages)
-Jalankan skrip otomasi builder:
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build_payload.ps1
-```
-
-Skrip ini akan secara otomatis:
-1. Mengunduh komponen resmi WNMP stack ke folder cache `.cache_downloads`.
-2. Mengekstrak dan menyusun struktur folder: `moodle/`, `php/`, `nginx/`, `mariadb/`, dan `moodledata/`.
-3. Mengonfigurasi `php.ini` dengan ekstensi lengkap Moodle.
-4. Melakukan pre-inisialisasi database MariaDB sistem (`mysql_install_db.exe`).
-5. Memverifikasi 24 titik kelengkapan komponen (Zero Missing Packages).
-6. Mengemas runtime menjadi berkas aman **`payload.pak` berukuran 209.1 MB**.
-
----
-
-### Langkah 3: Kompilasi Executable (Release Build)
-Kompilasi launcher ke dalam biner teroptimasi 64-bit:
-```powershell
-cargo build --release
-```
-
-Berkas biner yang dihasilkan akan berada di:
-```text
-.\target\x86_64-pc-windows-msvc\release\moodle_installer.exe
-```
-
----
-
-### Langkah 4: Jalankan Aplikasi
-Jalankan executable biner yang telah dikompilasi:
-```powershell
-.\target\x86_64-pc-windows-msvc\release\moodle_installer.exe
-```
-
-Indikator visual kemajuan tahapan akan ditampilkan di layar:
 ```text
 ==========================================================
           Moodle Portable 64-bit Engine Initializing      
@@ -161,32 +75,150 @@ Target Installation Directory: ./runtime
 [=========================>  ]  90% [Stage 4/5] Moodle CLI Installation - Moodle environment verified.
 [==========================> ]  95% [Stage 5/5] Services Launch & Ready - Checking background daemons readiness...
 [============================] 100% [Stage 5/5] Services Launch & Ready - Installation & runtime verification complete!
+
+Active Installation Components:
+  - Moodle Web Root:    ./runtime/moodle
+  - Moodledata Storage: ./runtime/moodledata
+  - Nginx Server:       ./runtime/nginx
+  - PHP 8.2 Runtime:    ./runtime/php
+  - MariaDB Database:   ./runtime/mariadb
+==========================================================
 ```
+
+> [!NOTE]
+> - Ekstraksi awal hanya berlangsung sekali (sekitar 15-30 detik tergantung kecepatan disk Anda).
+> - Pada peluncuran berikutnya, engine otomatis mendeteksi folder runtime yang sudah ada dan langsung aktif dalam hitungan detik.
 
 ---
 
-### Langkah 5: Akses Moodle Melalui Browser
-Setelah inisialisasi selesai, buka browser web Anda dan arahkan ke alamat berikut:
-
-1. **Akses Lokal (di komputer yang sama)**:
+### Langkah 4: Akses LMS Melalui Browser
+Setelah proses inisialisasi selesai:
+1. Browser default Anda akan terbuka secara otomatis ke alamat:
    ```text
    http://localhost
    ```
-2. **Akses Jaringan LAN (dari perangkat lain / HP / laptop siswa dalam satu Wi-Fi)**:
-   ```text
-   http://<ALAMAT-IP-KOMPUTER-ANDA>
-   ```
-   *(Contoh: `http://192.168.1.15`)*
-
-3. **Akun Administrator Default**:
+2. Anda akan diarahkan ke halaman login Moodle.
+3. Masuk menggunakan akun **Administrator Bawaan**:
    - **Username**: `admin`
    - **Password**: `Admin123!`
 
+> [!IMPORTANT]
+> **Saran Keamanan**: Segera ubah kata sandi administrator setelah login pertama kali melalui menu *Profile -> Change password*.
+
 ---
 
-## ⚙️ Opsi Perintah CLI (Command Line Options)
+### Langkah 5: Cara Menutup Aplikasi dengan Aman
+Untuk menjaga agar data ujian, materi, dan database tidak rusak atau korup:
+1. Kembali ke jendela konsol/terminal `moodle_installer.exe`.
+2. Tekan kombinasi tombol **`Ctrl + C`**.
+3. Sistem *Graceful Shutdown Manager* akan otomatis:
+   - Menghentikan web server Nginx secara teratur.
+   - Menyimpan seluruh antrean data (*buffer flush*) dan mematikan MariaDB secara bersih.
+   - Menghentikan proses worker PHP.
+4. Jendela terminal akan tertutup dengan aman.
 
-Moodle Portable mendukung argumen baris perintah kustom:
+---
+
+## 📱 Akses Multi-Perangkat (HP / Laptop Siswa via Wi-Fi/LAN)
+
+Moodle Portable dilengkapi dengan fitur **Dynamic LAN IP Routing**. Guru/admin dapat menjalankan aplikasi di laptop server, dan seluruh siswa dapat membuka ujian atau materi belajar dari ponsel pintar atau laptop mereka masing-masing.
+
+### Cara Menghubungkan Siswa:
+1. Pastikan laptop server dan perangkat siswa terhubung ke **jaringan Wi-Fi atau hotspot yang sama**.
+2. Periksa alamat IP lokal laptop server Anda (bisa dilihat di output terminal Moodle atau ketik `ipconfig` di Command Prompt).
+   - Misal alamat IP laptop Anda adalah: `192.168.1.15`
+3. Beritahukan alamat tersebut kepada siswa. Siswa cukup membuka browser di HP (Google Chrome, Safari, Firefox) dan mengetik:
+   ```text
+   http://192.168.1.15
+   ```
+4. Siswa langsung dapat masuk, membaca modul, atau mengerjakan kuis/ujian tanpa perlu menginstal aplikasi apapun!
+
+---
+
+## 💾 Portabilitas & Pencadangan (Backup ke Flashdisk)
+
+Salah satu keunggulan terbesar Moodle Portable adalah **True Portability**:
+- Seluruh data kursus, akun pengguna, bank soal, dan berkas unggahan tersimpan di dalam folder `runtime/` (`runtime/mariadb/data` dan `runtime/moodledata`).
+- Jika Anda ingin memindahkan sistem ke komputer/laptop lain:
+  1. Hentikan aplikasi dengan `Ctrl + C`.
+  2. Salin seluruh folder aplikasi (beserta folder `runtime/` di dalamnya) ke flashdisk eksternal.
+  3. Colokkan flashdisk ke komputer sekolah/kantor lain, lalu jalankan `moodle_installer.exe`.
+  4. Semua data kursus, nilai, dan akun siswa tetap utuh 100%!
+
+---
+
+## ❓ Tanya Jawab & Pemecahan Masalah (Troubleshooting)
+
+### Q: Muncul jendela Windows Defender Firewall saat pertama kali dijalankan?
+> **Jawab**: Klik tombol **Allow Access** (Izinkan Akses) untuk jaringan privat. Ini diperlukan agar Nginx dan MariaDB dapat menerima koneksi dari HP siswa di jaringan Wi-Fi lokal.
+
+### Q: Mengapa siswa tidak bisa membuka web dari HP mereka?
+> **Solusi**:
+> 1. Pastikan laptop server dan HP siswa terhubung ke satu Wi-Fi yang sama.
+> 2. Pastikan Wi-Fi router tidak mengaktifkan fitur *Client Isolation* / *AP Isolation* (yang membatasi komunikasi antar perangkat).
+> 3. Periksa apakah Windows Firewall di laptop Anda memblokir Port 80. Tambahkan izin port 80 pada *Inbound Rules* Windows Firewall jika diperlukan.
+
+### Q: Port 80 bentrok (Port 80 already in use)?
+> **Solusi**: Pastikan tidak ada aplikasi web server lain (seperti Apache XAMPP, IIS bawaan Windows, atau Skype lama) yang sedang berjalan di komputer Anda. Hentikan aplikasi tersebut sebelum menjalankan Moodle Portable.
+
+### Q: Bolehkah folder `payload.pak` dihapus setelah instalasi selesai?
+> **Jawab**: Setelah folder `runtime` terbentuk, aplikasi menggunakan file di dalam `runtime`. Namun, kami menyarankan tetap menyimpan `payload.pak` sebagai cadangan instalasi ulang jika Anda ingin mereset LMS ke kondisi awal.
+
+---
+
+## 🌟 Fitur Unggulan
+
+- **Zero-Configuration & Portable**: Berjalan langsung tanpa instalasi installer msi/setup yang mengotori registri Windows.
+- **Wadah Biner Terenkripsi Anti-Tamper (`payload.pak`)**:
+  - Menggantikan berkas zip polos dengan format biner berkepala `AKSA`.
+  - Tidak dapat dibuka atau diubah secara sembarangan oleh utilitas arsip umum (WinRAR, 7-Zip, File Explorer).
+  - Dilengkapi verifikasi integritas cryptographic SHA-256 (jika diubah 1 byte sekalipun, engine menolak ekstraksi demi keamanan data).
+  - Didekripsi langsung ke memori RAM (*in-memory streaming*), tidak meninggalkan file zip mentah di hard disk.
+- **Dual-Mode Payload Provisioning**:
+  - *Online Mode*: Mengunduh paket runtime resmi saat koneksi internet aktif.
+  - *Offline Mode*: Bekerja luring penuh tanpa internet menggunakan berkas lokal `payload.pak`.
+- **Pre-Initialized Database & Zero Missing Packages**:
+  - Seluruh modul aktivitas resmi Moodle (Forum, Assignment, Quiz, Wiki, SCORM, dll.) lengkap 100%.
+  - Tabel sistem MariaDB telah diinisialisasi otomatis dari awal.
+- **Visual Progress Bar**: Menampilkan indikator kemajuan proses instalasi (0% s/d 100%) secara bertahap pada konsol.
+- **Dynamic LAN IP Routing**: Menyesuaikan routing secara dinamis sehingga LMS dapat langsung diakses oleh perangkat lain di jaringan LAN.
+- **Background Cron Scheduler**: Thread internal mengeksekusi cron Moodle otomatis setiap 60 detik tanpa memblokir sistem.
+- **Graceful Shutdown**: Prosedur penutupan tertib via sinyal `Ctrl + C` untuk mencegah korupsi tabel InnoDB MariaDB.
+
+---
+
+## 📦 Komponen Stack 64-bit
+
+Seluruh modul dan executable beroperasi pada arsitektur **murni 64-bit (x86_64 / AMD64)**:
+
+| Komponen | Versi | Sumber Resmi |
+| :--- | :--- | :--- |
+| **Moodle Core** | v5.0.11 | [Moodle.org Official Stable 500](https://packaging.moodle.org/stable500/moodle-5.0.11.zip) |
+| **PHP Runtime** | 8.2.12 x64 | [PHP for Windows (Win32-vs16-x64)](https://windows.php.net/downloads/releases/archives/php-8.2.12-Win32-vs16-x64.zip) |
+| **Nginx Server** | 1.31.7 | [Nginx.org Official Windows Build](https://nginx.org/download/nginx-1.31.7.zip) |
+| **MariaDB** | 13.0.2 x64 | [MariaDB Winx64 Mirror](https://linux.domainesia.com/mariadb///mariadb-13.0.2/winx64-packages/mariadb-13.0.2-winx64.zip) |
+
+---
+
+## 💻 Kebutuhan Sistem (System Requirements)
+
+### Untuk Menjalankan Aplikasi (End-User):
+- **Sistem Operasi**: Windows 10 atau Windows 11 (64-bit).
+- **Arsitektur CPU**: x86_64 / AMD64.
+- **RAM**: Minimal 2 GB (Disarankan 4 GB+ agar performa maksimal).
+- **Ruang Disk Bebas**: Minimal 1 GB.
+- **Hak Akses**: Standard User (tidak membutuhkan hak Administrator).
+
+### Untuk Membangun dari Sumber (Developer):
+- **Rust Toolchain**: Versi 1.85+ (Edition 2024), target `x86_64-pc-windows-msvc`.
+- **PowerShell**: Windows PowerShell 5.1+ atau PowerShell 7+ (`pwsh`).
+- **Git for Windows**.
+
+---
+
+## ⚙️ Opsi Baris Perintah CLI (Tingkat Lanjut)
+
+Untuk administrator yang ingin mengotomasi instalasi atau menentukan direktori tertentu via terminal:
 
 ```bash
 moodle_installer.exe [OPTIONS]
@@ -201,48 +233,58 @@ moodle_installer.exe [OPTIONS]
 | `--verify-container` | `<PAK>` | Memverifikasi tanda tangan header dan keaslian checksum SHA-256 wadah `.pak`. |
 | `-h`, `--help` | - | Menampilkan petunjuk opsi penggunaan CLI. |
 
-### Contoh Penggunaan Direktori Kustom:
+### Contoh Penggunaan:
 ```powershell
-# Mengarahkan instalasi runtime ke drive D:
-.\moodle_installer.exe --install-dir "D:\MoodlePortable"
+# Menentukan folder instalasi di drive D:
+.\moodle_installer.exe --install-dir "D:\LMS_Sekolah"
 
-# Atau menggunakan flag singkat:
-.\moodle_installer.exe -d "D:\LMS"
+# Menggunakan variabel lingkungan:
+$env:MOODLE_INSTALL_DIR = "E:\PortableLMS"
+.\moodle_installer.exe
 
-# Mengemas arsip zip menjadi wadah terenkripsi .pak:
-.\moodle_installer.exe --pack-container "payload.zip" "payload.pak"
-
-# Memverifikasi integritas wadah .pak:
+# Memverifikasi integritas payload.pak:
 .\moodle_installer.exe --verify-container "payload.pak"
 ```
 
-### Variabel Lingkungan:
-Anda juga dapat mengatur variabel lingkungan sistem `MOODLE_INSTALL_DIR`:
+---
+
+## 🛠️ Panduan Pengembang (Build from Source)
+
+Jika Anda adalah seorang pengembang yang ingin mengompilasi biner sendiri:
+
+### 1. Kloning Repositori
 ```powershell
-$env:MOODLE_INSTALL_DIR = "E:\Sekolah_Moodle"
-.\moodle_installer.exe
+git clone https://github.com/cybertank378/moodle_portable.git
+cd moodle_installer
 ```
 
+### 2. Rakit `payload.pak` Lengkap
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_payload.ps1
+```
+Skrip ini akan mengunduh paket resmi WNMP, menyusun konfigurasi `php.ini`, melakukan pre-inisialisasi MariaDB sistem, memvalidasi 24 titik kelengkapan modul, dan mengemasnya ke dalam wadah terenkripsi `payload.pak` (209.1 MB).
+
+### 3. Kompilasi Executable Rust
+```powershell
+cargo build --release
+```
+Biner hasil kompilasi akan berada di: `target\x86_64-pc-windows-msvc\release\moodle_installer.exe`.
+
+### 4. Menjalankan Pengujian (Testing)
+```powershell
+cargo test
+```
+Seluruh 62 unit test dipastikan lulus 100% hijau.
+
 ---
 
-## 🛑 Penghentian Layanan Aman (Graceful Shutdown)
-
-Untuk mematikan seluruh servis secara aman tanpa merusak integritas database MariaDB:
-- Tekan **`Ctrl + C`** pada jendela terminal Moodle Portable.
-- Engine akan menjalankan prosedur penghentian berurutan:
-  1. Mengirim perintah `nginx -s quit` ke web server.
-  2. Melakukan *flush tables* dan menghentikan daemon MariaDB via `mariadb-admin shutdown`.
-  3. Menghentikan proses worker PHP-CGI FastCGI.
-
----
-
-## 📂 Struktur Kode Sumber
+## 📂 Struktur Kode Sumber & Lisensi
 
 ```text
 moodle_installer/
 ├── scripts/
-│   ├── build_payload.ps1    # Skrip otomatisasi download, konfigurasi, build payload.zip & payload.pak
-│   └── prune_moodle.ps1     # Skrip pemangkas modul non-esensial Moodle
+│   ├── build_payload.ps1    # Skrip builder otomatis WNMP, pre-init MariaDB, audit kelengkapan, & generator .pak
+│   └── prune_moodle.ps1     # Skrip pembersih berkas pengembang dan CI non-esensial Moodle
 ├── src/
 │   ├── browser.rs           # Peluncur browser default otomatis
 │   ├── container.rs         # Wadah biner terenkripsi AKSA .pak & anti-tamper SHA-256
@@ -259,14 +301,12 @@ moodle_installer/
 │   ├── progress.rs          # Visual progress bar & CLI argument parsing
 │   ├── prune.rs             # Logika pemangkasan ukuran direktori Moodle
 │   └── security.rs          # Sandbox runtime isolation & secure nginx.conf generator
-├── app_icon.ico             # Ikon biner resmi aplikasi Windows
+├── app_icon.ico             # Ikon biner resmi aplikasi Windows PE
 ├── build.rs                 # Integrasi resource metadata Windows PE (winres)
 ├── Cargo.toml               # Konfigurasi dependensi proyek Rust (zip, ctrlc, sha2)
 └── README.md                # Dokumentasi lengkap proyek
 ```
 
----
-
-## 📄 Lisensi
+### Lisensi
 Proyek ini dilisensikan di bawah ketentuan lisensi **GNU General Public License v3.0 (GPL-3.0)**.
 Moodle adalah merek dagang terdaftar milik Moodle Pty Ltd.
