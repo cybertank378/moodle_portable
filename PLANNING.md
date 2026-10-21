@@ -21,6 +21,6 @@ Moodle Portable adalah platform launcher berbasis Rust yang membungkus Nginx, PH
 - [ ] Pengujian konkurensi koneksi LAN pada skenario bandwidth terbatas.
 
 ## Phase 4: Distribution & Packaging (Week 4)
-- [ ] Penambahan ikon biner (`app_icon.ico`) via `winres`.
+- [x] Penambahan ikon biner (`app_icon.ico`) via `winres`.
 - [ ] Optimization build release (`opt-level = "z"`, LTO enabled).
 - [ ] Penetration & compatibility test pada Windows 10/11 64-bit non-admin accounts.

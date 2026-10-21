@@ -196,10 +196,10 @@ Dokumen ini memuat seluruh *Epic*, *Issue*, dan *Atomic Tasks* untuk pengembanga
   Menambahkan ikon `.ico` kustom pada berkas biner `.exe` hasil kompilasi agar aplikasi terlihat profesional.
 
 * **Tasks**:
-  - [ ] Tambahkan `winres = "0.1"` pada `[build-dependencies]` di `Cargo.toml`.
-  - [ ] Buat file `build.rs` di root proyek.
-  - [ ] Konfigurasi `winres::WindowsResource::new().set_icon("app_icon.ico")`.
-  - [ ] Lakukan pengujian kompilasi rilis `cargo build --release`.
+  - [x] Tambahkan `winres = "0.1"` pada `[build-dependencies]` di `Cargo.toml`.
+  - [x] Buat file `build.rs` di root proyek.
+  - [x] Konfigurasi `winres::WindowsResource::new().set_icon("app_icon.ico")`.
+  - [x] Lakukan pengujian kompilasi rilis `cargo build --release`.
 
 * **Acceptance Criteria**:
   - File `moodle_installer.exe` menampilkan ikon `app_icon.ico` di Windows File Explorer dan Task Manager.
