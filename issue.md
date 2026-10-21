@@ -160,9 +160,9 @@ Dokumen ini memuat seluruh *Epic*, *Issue*, dan *Atomic Tasks* untuk pengembanga
   Membuka browser default sistem mengarah ke `http://localhost` atau IP LAN setelah seluruh service (Nginx, PHP, MariaDB) dipastikan siap.
 
 * **Tasks**:
-  - [ ] Buat fungsi `open_browser(url: &str)`.
-  - [ ] Gunakan sub-proses `cmd /C start http://localhost` dengan `CREATE_NO_WINDOW`.
-  - [ ] Panggil fungsi ini tepat setelah Nginx & PHP-CGI terkonfirmasi aktif.
+  - [x] Buat fungsi `open_browser(url: &str)`.
+  - [x] Gunakan sub-proses `cmd /C start http://localhost` dengan `CREATE_NO_WINDOW`.
+  - [x] Panggil fungsi ini tepat setelah Nginx & PHP-CGI terkonfirmasi aktif.
 
 * **Acceptance Criteria**:
   - Tab baru pada browser default otomatis terbuka dan menampilkan halaman depan Moodle begitu launcher diaktifkan.
