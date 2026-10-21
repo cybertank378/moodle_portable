@@ -5,9 +5,11 @@ pub mod lifecycle;
 pub mod moodle;
 pub mod network;
 pub mod process;
+pub mod prune;
 pub mod security;
 
 pub use browser::{build_open_browser_command, open_browser, open_moodle_browser};
+pub use prune::{calculate_dir_size, prune_moodle, remove_test_directories, PruneReport, PRUNE_TARGETS};
 pub use cron::{
     build_cron_command, run_cron_once, spawn_scheduler, start_moodle_cron,
     start_moodle_cron_with_interval, CronHandle, CronPaths, DEFAULT_CRON_INTERVAL,

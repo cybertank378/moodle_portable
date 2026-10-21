@@ -179,9 +179,9 @@ Dokumen ini memuat seluruh *Epic*, *Issue*, dan *Atomic Tasks* untuk pengembanga
   Membuang modul-modul Moodle yang tidak diperlukan (seperti `mod_forum`, `mod_chat`, `mod_wiki`, `mod_workshop`) sebelum direktori disatukan ke dalam `payload.zip`.
 
 * **Tasks**:
-  - [ ] Buat skrip automasi pembersihan (`prune_moodle.ps1` atau `prune_moodle.sh`).
-  - [ ] Hapus direktori `mod/forum`, `mod/chat`, `mod/wiki`, `mod/glossary`, `mod/workshop`.
-  - [ ] Hapus folder pengujian `.git`, `node_modules`, dan berkas dokumentasi internal Moodle.
+  - [x] Buat skrip automasi pembersihan (`prune_moodle.ps1` atau `prune_moodle.sh`).
+  - [x] Hapus direktori `mod/forum`, `mod/chat`, `mod/wiki`, `mod/glossary`, `mod/workshop`.
+  - [x] Hapus folder pengujian `.git`, `node_modules`, dan berkas dokumentasi internal Moodle.
 
 * **Acceptance Criteria**:
   - Ukuran folder Moodle berkurang minimal 35–45% dari ukuran asli sebelum di-zip.
