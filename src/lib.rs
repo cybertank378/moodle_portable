@@ -1,9 +1,14 @@
+pub mod cron;
 pub mod database;
 pub mod moodle;
 pub mod network;
 pub mod process;
 pub mod security;
 
+pub use cron::{
+    build_cron_command, run_cron_once, spawn_scheduler, start_moodle_cron,
+    start_moodle_cron_with_interval, CronHandle, CronPaths, DEFAULT_CRON_INTERVAL,
+};
 pub use database::{
     bootstrap_mariadb, create_database, create_database_with_params, ensure_my_ini,
     generate_my_ini, start_mariadb, wait_for_mariadb_ready, MariaDbPaths, DEFAULT_DB_NAME,
