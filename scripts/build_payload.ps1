@@ -18,13 +18,18 @@
 
 .PARAMETER OutputZip
     Destination file path for payload.zip (defaults to ./payload.zip).
+
+.PARAMETER OutputPak
+    Destination file path for encrypted payload.pak container (defaults to ./payload.pak).
 #>
 [CmdletBinding()]
 param (
     [string]$CacheDir = "./.cache_downloads",
     [string]$StagingDir = "./staging_payload",
     [string]$OutputZip = "./payload.zip",
-    [switch]$SkipDownload
+    [string]$OutputPak = "./payload.pak",
+    [switch]$SkipDownload,
+    [switch]$SkipPak
 )
 
 $ErrorActionPreference = "Stop"
@@ -271,8 +276,28 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $finalZipSize = (Get-Item $OutputPath).Length
 $finalZipMB = [math]::Round($finalZipSize / 1MB, 2)
-Write-Host "`n==========================================================" -ForegroundColor Green
 Write-Host "  SUCCESS: payload.zip generated!" -ForegroundColor Green
 Write-Host "  Output File: $OutputPath" -ForegroundColor White
 Write-Host "  Final Size:  $finalZipMB MB ($finalZipSize bytes)" -ForegroundColor White
+
+# --- 6. GENERATE ENCRYPTED CONTAINER (.PAK) ---
+if (-not $SkipPak) {
+    $PakPath = Join-Path $ProjectRoot $OutputPak
+    Write-Host "`n[6/6] Packaging into Encrypted Container ($PakPath)..." -ForegroundColor Yellow
+    if (Test-Path $PakPath) {
+        Remove-Item -Path $PakPath -Force
+    }
+
+    cargo run --release --manifest-path (Join-Path $ProjectRoot "Cargo.toml") -- --pack-container $OutputPath $PakPath
+    if (Test-Path $PakPath) {
+        $pakSize = (Get-Item $PakPath).Length
+        $pakMB = [math]::Round($pakSize / 1MB, 2)
+        Write-Host "  SUCCESS: Secure container generated!" -ForegroundColor Green
+        Write-Host "  Output File: $PakPath" -ForegroundColor White
+        Write-Host "  Final Size:  $pakMB MB ($pakSize bytes)" -ForegroundColor White
+    }
+}
+
+Write-Host "`n==========================================================" -ForegroundColor Green
+Write-Host "  Build Pipeline Complete!" -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
