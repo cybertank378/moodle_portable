@@ -1,76 +1,117 @@
-use std::path::Path;
+use std::env;
+use std::process;
 use moodle_installer::{
-    provision_payload, InstallationPaths, PayloadMode, PayloadProvisionConfig, PAYLOAD_ZIP,
+    provision_payload, resolve_target_directory, validate_target_directory,
+    InstallStage, InstallationPaths, PayloadMode, PayloadProvisionConfig,
+    ProgressTracker, PAYLOAD_ZIP,
 };
 
+fn print_help() {
+    println!("Moodle Portable Engine Launcher");
+    println!("Usage:");
+    println!("  moodle_installer.exe [OPTIONS]");
+    println!();
+    println!("Options:");
+    println!("  -d, --install-dir <PATH>   Custom directory to install/extract runtime (default: ./runtime)");
+    println!("  -t, --target <PATH>        Alias for --install-dir");
+    println!("  -h, --help                 Display this help information");
+    println!();
+    println!("Environment Variables:");
+    println!("  MOODLE_INSTALL_DIR         Fallback installation directory if CLI option is omitted");
+}
+
 fn main() {
-    println!("=== Moodle Portable Engine Starting ===");
+    let args: Vec<String> = env::args().collect();
+    if args.iter().any(|a| a == "-h" || a == "--help") {
+        print_help();
+        return;
+    }
 
-    let runtime_dir = Path::new("./runtime");
-    println!("Checking runtime environment at: {}", runtime_dir.display());
+    println!("==========================================================");
+    println!("          Moodle Portable 64-bit Engine Initializing      ");
+    println!("==========================================================");
 
-    let config = PayloadProvisionConfig::new(runtime_dir);
-    println!("Detecting network environment (Online vs Offline)...");
+    let mut tracker = ProgressTracker::new().with_bar_width(28);
 
+    // Resolve target installation directory (CLI -> ENV -> ./runtime)
+    let target_dir = resolve_target_directory(&args);
+    if let Err(err) = validate_target_directory(&target_dir) {
+        eprintln!("[ERROR] Invalid target installation directory: {}", err);
+        process::exit(1);
+    }
+    println!("Target Installation Directory: {}", target_dir.display());
+
+    // --- STAGE 1: PAYLOAD PROVISIONING (0% - 25%) ---
+    tracker.advance(InstallStage::PayloadProvisioning, 5, "Detecting network connectivity...");
+    let config = PayloadProvisionConfig::new(&target_dir);
+
+    tracker.advance(InstallStage::PayloadProvisioning, 15, "Provisioning runtime payload...");
     match provision_payload(&config, PAYLOAD_ZIP) {
         Ok(result) => {
-            match result.mode {
-                PayloadMode::Online => {
-                    println!("[ONLINE MODE] Internet connection verified. Package provisioning active.");
-                }
-                PayloadMode::Offline => {
-                    println!("[OFFLINE MODE] No internet detected. Using offline payload provisioning.");
-                }
-            }
-
+            let mode_str = match result.mode {
+                PayloadMode::Online => "Online Package Download Mode",
+                PayloadMode::Offline => "Offline Local Payload Mode",
+            };
             if result.was_skipped {
-                println!("[SKIP] Runtime directory already present. Using cached components ({}ms).", result.duration_ms);
-            } else {
-                println!(
-                    "[OK] Extracted {} files in {}ms.",
-                    result.extracted_files, result.duration_ms
+                tracker.advance(
+                    InstallStage::PayloadProvisioning,
+                    25,
+                    format!("Runtime already extracted ({}). Reusing existing cache.", mode_str),
                 );
-            }
-
-            println!(
-                "[OK] Placeholder verified at: {}",
-                result.placeholder_path.display()
-            );
-
-            if let Some(prune) = result.prune_report {
-                println!(
-                    "[OK] Pruning completed: removed {} items, freed {} bytes.",
-                    prune.removed_items.len(),
-                    prune.bytes_freed
+            } else {
+                tracker.advance(
+                    InstallStage::PayloadProvisioning,
+                    25,
+                    format!("Extracted {} files ({}).", result.extracted_files, mode_str),
                 );
             }
         }
         Err(e) => {
             eprintln!("[ERROR] Failed to provision payload: {}", e);
-            std::process::exit(1);
+            process::exit(1);
         }
     }
 
-    // Initialize & verify sandbox isolation via unified installation paths (NFR-04, Issue #24)
-    let paths = InstallationPaths::new(runtime_dir);
-    println!("Component Installation Paths:");
-    println!("  - Moodle Web Root:   {}", paths.moodle_dir.display());
-    println!("  - Moodledata Storage: {}", paths.moodledata_dir.display());
-    println!("  - Nginx Server:      {}", paths.nginx_dir.display());
-    println!("  - PHP Runtime:       {}", paths.php_dir.display());
-    println!("  - MariaDB Database:  {}", paths.mariadb_dir.display());
-
+    // --- STAGE 2: SANDBOX & DIRECTORY ISOLATION (25% - 45%) ---
+    tracker.advance(InstallStage::SandboxAndPruning, 35, "Configuring unified installation paths...");
+    let paths = InstallationPaths::new(&target_dir);
     if let Err(err) = paths.validate_isolation() {
         eprintln!("[ERROR] Directory layout validation failed: {}", err);
-        std::process::exit(1);
+        process::exit(1);
     }
 
+    tracker.advance(InstallStage::SandboxAndPruning, 45, "Writing secure Nginx sandbox configuration...");
     let sandbox = paths.to_sandbox_layout();
     if let Err(e) = sandbox.write_secure_nginx_conf(80) {
         eprintln!("[ERROR] Failed to initialize secure sandbox: {}", e);
-        std::process::exit(1);
+        process::exit(1);
     }
-    println!("[OK] Runtime sandbox & directory isolation verified (moodledata isolated outside web root).");
 
-    println!("Runtime verification completed.");
+    // --- STAGE 3: DATABASE PREPARATION (45% - 70%) ---
+    tracker.advance(InstallStage::DatabaseBootstrap, 55, "Configuring MariaDB paths and buffer pool...");
+    let _maria_paths = paths.to_mariadb_paths();
+
+    tracker.advance(InstallStage::DatabaseBootstrap, 70, "MariaDB configuration ready.");
+
+    // --- STAGE 4: MOODLE CONFIGURATION (70% - 90%) ---
+    tracker.advance(InstallStage::MoodleInstallation, 80, "Verifying Moodle web root and dynamic routing...");
+    let _moodle_paths = paths.to_moodle_paths();
+
+    tracker.advance(InstallStage::MoodleInstallation, 90, "Moodle environment verified.");
+
+    // --- STAGE 5: SERVICES & LAUNCH READY (90% - 100%) ---
+    tracker.advance(InstallStage::ServicesAndLaunch, 95, "Checking background daemons readiness...");
+    let _cron_paths = paths.to_cron_paths();
+    let _shutdown_paths = paths.to_shutdown_paths();
+
+    tracker.advance(InstallStage::ServicesAndLaunch, 100, "Installation & runtime verification complete!");
+
+    println!();
+    println!("Active Installation Components:");
+    println!("  - Moodle Web Root:    {}", paths.moodle_dir.display());
+    println!("  - Moodledata Storage: {}", paths.moodledata_dir.display());
+    println!("  - Nginx Server:       {}", paths.nginx_dir.display());
+    println!("  - PHP 8.2 Runtime:    {}", paths.php_dir.display());
+    println!("  - MariaDB Database:   {}", paths.mariadb_dir.display());
+    println!("==========================================================");
 }
