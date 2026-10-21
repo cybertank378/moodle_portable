@@ -278,6 +278,7 @@ name = "moodle_installer"
 version = "0.1.1"
 dependencies = [
  "ctrlc",
+ "sha2",
  "winres",
  "zip",
 ]
