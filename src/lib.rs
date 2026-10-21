@@ -1,3 +1,4 @@
+pub mod browser;
 pub mod cron;
 pub mod database;
 pub mod lifecycle;
@@ -6,6 +7,7 @@ pub mod network;
 pub mod process;
 pub mod security;
 
+pub use browser::{build_open_browser_command, open_browser, open_moodle_browser};
 pub use cron::{
     build_cron_command, run_cron_once, spawn_scheduler, start_moodle_cron,
     start_moodle_cron_with_interval, CronHandle, CronPaths, DEFAULT_CRON_INTERVAL,
