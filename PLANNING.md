@@ -4,10 +4,11 @@
 Moodle Portable adalah platform launcher berbasis Rust yang membungkus Nginx, PHP, MariaDB, dan Moodle yang ter-pruning ke dalam single executable file untuk lingkungan Windows offline/LAN.
 
 ## Phase 1: Core Engine & Runtime Extraction (Week 1)
-- [ ] Desain struktur payload (Nginx, PHP-CGI, MariaDB, Pruned Moodle).
+- [x] Desain struktur payload (Nginx, PHP-CGI, MariaDB, Pruned Moodle).
 - [x] Embed payload zip menggunakan `include_bytes!` pada Rust binary.
 - [x] Implementasi ekstraksi otomatis dan struktur folder runtime.
 - [x] Penanganan silent execution (`CREATE_NO_WINDOW`) untuk seluruh daemon.
+- [x] Dual-Mode Payload Provisioning: Deteksi internet online (download package) & offline fallback (`offline_payload.zip`, `placeholder.txt`, dan auto-pruning).
 
 ## Phase 2: Dynamic Networking & Automated Setup (Week 2)
 - [x] Deteksi IP address LAN dinamis saat boot.

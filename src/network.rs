@@ -1,7 +1,27 @@
-use std::net::{IpAddr, UdpSocket};
+use std::net::{IpAddr, TcpStream, ToSocketAddrs, UdpSocket};
+use std::time::Duration;
 
 pub const DEFAULT_FALLBACK_IP: &str = "127.0.0.1";
 pub const DEFAULT_PROBE_TARGET: &str = "8.8.8.8:80";
+pub const DEFAULT_INTERNET_PROBE: &str = "1.1.1.1:53";
+pub const SECONDARY_INTERNET_PROBE: &str = "8.8.8.8:53";
+pub const DEFAULT_INTERNET_TIMEOUT: Duration = Duration::from_millis(2000);
+
+/// Checks if there is an active internet connection by attempting a fast TCP probe (Issue #21).
+pub fn is_internet_connected() -> bool {
+    is_internet_connected_with_target(DEFAULT_INTERNET_PROBE, DEFAULT_INTERNET_TIMEOUT)
+        || is_internet_connected_with_target(SECONDARY_INTERNET_PROBE, DEFAULT_INTERNET_TIMEOUT)
+}
+
+/// Checks internet connectivity against a specific socket address target and timeout.
+pub fn is_internet_connected_with_target(probe_target: &str, timeout: Duration) -> bool {
+    if let Ok(mut addrs) = probe_target.to_socket_addrs() {
+        if let Some(addr) = addrs.next() {
+            return TcpStream::connect_timeout(&addr, timeout).is_ok();
+        }
+    }
+    false
+}
 
 /// Resolves the active LAN IP address of the host machine (FR-03).
 ///
@@ -69,5 +89,18 @@ mod tests {
 
         let url_custom = get_service_url(8080);
         assert_eq!(url_custom, format!("http://{}:8080", ip));
+    }
+
+    #[test]
+    fn test_is_internet_connected_with_unreachable_target() {
+        // Blackhole / non-routable port should cleanly return false without panic
+        let connected = is_internet_connected_with_target("127.0.0.1:1", Duration::from_millis(50));
+        assert!(!connected, "Probe to unreachable local port should return false");
+    }
+
+    #[test]
+    fn test_is_internet_connected_with_invalid_syntax() {
+        let connected = is_internet_connected_with_target("invalid_domain_that_does_not_exist_xyz:80", Duration::from_millis(50));
+        assert!(!connected, "Probe to invalid domain should safely return false");
     }
 }
