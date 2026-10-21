@@ -5,9 +5,9 @@ fn main() {
         if std::path::Path::new("app_icon.ico").exists() {
             res.set_icon("app_icon.ico");
         }
-        res.set("ProductName", "Moodle Portable");
-        res.set("FileDescription", "Moodle Portable Plug-and-Play Server Launcher");
-        res.set("LegalCopyright", "Copyright (C) 2026 Moodle Portable");
+        res.set("ProductName", "Aksaventra LMS Portable");
+        res.set("FileDescription", "Aksaventra LMS");
+        res.set("LegalCopyright", "Copyright (C) 2026 Aksaventra");
         if let Err(e) = res.compile() {
             eprintln!("cargo:warning=Failed to compile Windows resources: {}", e);
         }
