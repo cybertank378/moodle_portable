@@ -3,3 +3,4 @@
 /.cache_downloads
 /staging_payload
 /scratch
+*.pak
