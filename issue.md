@@ -140,12 +140,12 @@ Dokumen ini memuat seluruh *Epic*, *Issue*, dan *Atomic Tasks* untuk pengembanga
   Saat launcher ditutup, seluruh child process harus dihentikan secara teratur. Khusus MariaDB, perintah `shutdown` harus dikirimkan agar buffer InnoDB ter-flush ke disk untuk mencegah korupsi tabel.
 
 * **Tasks**:
-  - [ ] Tambahkan dependensi `ctrlc = "3.4"` di `Cargo.toml`.
-  - [ ] Buat fungsi `stop_services_gracefully(base_dir: &str)`.
-  - [ ] Jalankan `nginx.exe -s stop`.
-  - [ ] Jalankan `mariadb-admin.exe -u root shutdown`.
-  - [ ] Hentikan sisa proses `php-cgi.exe` via `taskkill`.
-  - [ ] Pasang signal handler `ctrlc::set_handler` di fungsi `main()`.
+  - [x] Tambahkan dependensi `ctrlc = "3.4"` di `Cargo.toml`.
+  - [x] Buat fungsi `stop_services_gracefully(base_dir: &str)`.
+  - [x] Jalankan `nginx.exe -s stop`.
+  - [x] Jalankan `mariadb-admin.exe -u root shutdown`.
+  - [x] Hentikan sisa proses `php-cgi.exe` via `taskkill`.
+  - [x] Pasang signal handler `ctrlc::set_handler` di fungsi `main()`.
 
 * **Acceptance Criteria**:
   - MariaDB mati dengan *exit code 0* tanpa meninggalkan status *unclean shutdown* pada file log.

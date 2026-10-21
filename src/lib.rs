@@ -1,5 +1,6 @@
 pub mod cron;
 pub mod database;
+pub mod lifecycle;
 pub mod moodle;
 pub mod network;
 pub mod process;
@@ -13,6 +14,11 @@ pub use database::{
     bootstrap_mariadb, create_database, create_database_with_params, ensure_my_ini,
     generate_my_ini, start_mariadb, wait_for_mariadb_ready, MariaDbPaths, DEFAULT_DB_NAME,
     DEFAULT_MARIADB_PORT, DEFAULT_READY_TIMEOUT,
+};
+pub use lifecycle::{
+    build_mariadb_shutdown_command, build_nginx_stop_command, build_php_kill_command,
+    setup_ctrlc_handler, stop_services_gracefully, stop_services_gracefully_with_port,
+    ServiceShutdownPaths, ShutdownReport,
 };
 pub use moodle::{
     build_install_command, install_moodle, is_config_patched, patch_config_content,
