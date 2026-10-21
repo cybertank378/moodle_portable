@@ -1,2 +1,4 @@
 /target
 /runtime
+/.cache_downloads
+/staging_payload

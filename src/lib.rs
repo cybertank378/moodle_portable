@@ -1,3 +1,48 @@
+pub mod browser;
+pub mod cron;
+pub mod database;
+pub mod lifecycle;
+pub mod moodle;
+pub mod network;
+pub mod paths;
+pub mod payload;
+pub mod process;
+pub mod prune;
+pub mod security;
+
+pub use browser::{build_open_browser_command, open_browser, open_moodle_browser};
+pub use prune::{calculate_dir_size, prune_moodle, remove_test_directories, PruneReport, PRUNE_TARGETS};
+pub use cron::{
+    build_cron_command, run_cron_once, spawn_scheduler, start_moodle_cron,
+    start_moodle_cron_with_interval, CronHandle, CronPaths, DEFAULT_CRON_INTERVAL,
+};
+pub use database::{
+    bootstrap_mariadb, create_database, create_database_with_params, ensure_my_ini,
+    generate_my_ini, start_mariadb, wait_for_mariadb_ready, MariaDbPaths, DEFAULT_DB_NAME,
+    DEFAULT_MARIADB_PORT, DEFAULT_READY_TIMEOUT,
+};
+pub use lifecycle::{
+    build_mariadb_shutdown_command, build_nginx_stop_command, build_php_kill_command,
+    setup_ctrlc_handler, stop_services_gracefully, stop_services_gracefully_with_port,
+    ServiceShutdownPaths, ShutdownReport,
+};
+pub use moodle::{
+    build_install_command, install_moodle, is_config_patched, patch_config_content,
+    patch_moodle_config_for_dynamic_ip, MoodleInstallOptions, MoodlePaths, DYNAMIC_WWWROOT_SNIPPET,
+};
+pub use network::{
+    get_local_ip, get_service_url, is_internet_connected, is_internet_connected_with_target,
+    resolve_local_ip, DEFAULT_FALLBACK_IP, DEFAULT_INTERNET_PROBE, DEFAULT_PROBE_TARGET,
+};
+pub use paths::InstallationPaths;
+pub use payload::{
+    detect_payload_mode, ensure_placeholder_file, provision_payload, resolve_offline_payload_path,
+    PayloadMode, PayloadProvisionConfig, ProvisionResult, DEFAULT_OFFLINE_PAYLOAD_NAME,
+    PLACEHOLDER_FILENAME,
+};
+pub use process::{create_silent_command, run_silent_status, spawn_silent, SilentCommandExt, CREATE_NO_WINDOW};
+pub use security::{generate_secure_nginx_conf, validate_nginx_security, SandboxLayout};
+
 use std::fs;
 use std::io::{self, Cursor};
 use std::path::Path;
