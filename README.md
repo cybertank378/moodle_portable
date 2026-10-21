@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20x64-blue.svg)]()
-[![Release](https://img.shields.io/badge/Release-v0.1.0-brightgreen.svg)](https://github.com/cybertank378/moodle_portable/releases)
+[![Release](https://img.shields.io/badge/Release-v0.2.0--beta.1-brightgreen.svg)](https://github.com/cybertank378/moodle_portable/releases)
 [![License](https://img.shields.io/badge/License-GPL--3.0-lightgrey.svg)]()
 
 **Moodle Portable** adalah *single-executable launcher* mandiri berbasis bahasa pemrograman **Rust (64-bit)** untuk sistem operasi Microsoft Windows. Aplikasi ini membungkus stack WNMP lengkap secara portabel dan *plug-and-play* tanpa memerlukan konfigurasi manual rumit ataupun hak akses Administrator (UAC).
@@ -13,10 +13,10 @@
 1. [Fitur Utama](#-fitur-utama)
 2. [Komponen Stack 64-bit](#-komponen-stack-64-bit)
 3. [Kebutuhan Sistem (Prerequisites)](#-kebutuhan-sistem-prerequisites)
-4. [Penjelasan `payload.zip` (1 KB vs 207 MB)](#-penjelasan-payloadzip-1-kb-vs-207-mb)
+4. [Penjelasan Wadah Terenkripsi `payload.pak` & Stub `payload.zip`](#-penjelasan-wadah-terenkripsi-payloadpak--stub-payloadzip)
 5. [Panduan Langkah demi Langkah](#-panduan-langkah-demi-langkah)
    - [Langkah 1: Kloning Repositori](#langkah-1-kloning-repositori)
-   - [Langkah 2: Rakit `payload.zip` Riil](#langkah-2-rakit-payloadzip-riil)
+   - [Langkah 2: Rakit `payload.pak` Riil (Full Packages)](#langkah-2-rakit-payloadpak-riil-full-packages)
    - [Langkah 3: Kompilasi Executable (Release Build)](#langkah-3-kompilasi-executable-release-build)
    - [Langkah 4: Jalankan Aplikasi](#langkah-4-jalankan-aplikasi)
    - [Langkah 5: Akses Moodle Melalui Browser](#langkah-5-akses-moodle-melalui-browser)
@@ -32,15 +32,15 @@
 - **Zero-Configuration & Portable**: Berjalan langsung dari flashdisk, hard disk eksternal, atau folder lokal tanpa perlu menginstal server web terpisah.
 - **Dual-Mode Payload Provisioning**:
   - *Online Mode*: Mengunduh paket runtime resmi saat koneksi internet aktif.
-  - *Offline Mode*: Bekerja luring penuh menggunakan wadah terenkripsi `offline_payload.pak` (atau `offline_payload.zip`).
-- **Wadah Biner Terenkripsi Anti-Tamper (`.pak`)**: Menggantikan berkas zip polos dengan wadah biner terenkripsi berkepala `AKSA` dan verifikasi integritas SHA-256. Berkas ini tidak dapat diekstrak oleh utilitas arsip umum (WinRAR, 7-Zip, File Explorer) dan otomatis mendeteksi manipulasi data pihak ketiga.
+  - *Offline Mode*: Bekerja luring penuh menggunakan wadah terenkripsi `offline_payload.pak` atau `payload.pak`.
+- **Wadah Biner Terenkripsi Anti-Tamper (`.pak`)**: Menggantikan berkas zip polos dengan wadah biner khusus berkepala `AKSA`, enkripsi stream CTR, dan verifikasi integritas SHA-256. Berkas ini tidak dapat dibuka oleh WinRAR / 7-Zip dan otomatis mendeteksi modifikasi atau pemalsuan data.
 - **Visual Installation Progress Bar**: Menampilkan indikator kemajuan instalasi (0% s/d 100%) dengan 5 tahapan berurutan secara dinamis pada konsol.
 - **Custom Installation Directory**: Mendukung pemilihan direktori target instalasi via argumen CLI `--install-dir <PATH>` atau variabel lingkungan `MOODLE_INSTALL_DIR`.
 - **Dynamic LAN IP Routing**: Akses instan dari jaringan lokal (Wi-Fi/LAN) tanpa konfigurasi DNS berkat dynamic HTTP_HOST patcher.
 - **Keamanan & Isolasi Direktori (NFR-04)**: Direktori sensitif `moodledata` terisolasi ketat di luar direktori web root Nginx.
 - **Background Cron Scheduler**: Thread latar belakang mandiri yang mengeksekusi cron Moodle setiap 60 detik tanpa memblokir thread utama.
 - **Graceful Shutdown Manager**: Menangani sinyal `Ctrl + C` secara tertib untuk mematikan Nginx, melakukan flush buffer database MariaDB, dan mematikan worker PHP secara aman.
-- **Ukuran Ramping (Pruning Engine)**: Skrip pemangkasan internal membuang test suites, behat, dan berkas non-esensial Moodle sehingga menghemat lebih dari **56 MB**.
+- **Pre-Initialized Database & Core Activity Plugins**: Tabel sistem MariaDB telah terinisialisasi secara otomatis, dan semua modul aktivitas inti Moodle (forum, assignment, quiz, wiki, dll.) dipertahankan 100% lengkap.
 
 ---
 
@@ -74,23 +74,33 @@ Seluruh modul dan executable beroperasi pada arsitektur **murni 64-bit (x86_64 /
 
 ---
 
-## 💡 Penjelasan `payload.zip` (1 KB vs 207 MB)
+## 💡 Penjelasan Wadah Terenkripsi `payload.pak` & Stub `payload.zip`
 
 > [!IMPORTANT]
-> **Mengapa file `payload.zip` yang ada di Git hanya berukuran ~1 KB (204 bytes)?**
+> **Mengapa file `payload.zip` di Git hanya berukuran ~1 KB (204 bytes)?**
 > 
-> Berkas arsip runtime WNMP riil yang lengkap berukuran **207.38 MB**.
-> **GitHub memiliki batasan ukuran file maksimal 100 MB**, sehingga berkas 207 MB ditolak jika di-commit langsung ke Git.
+> Berkas runtime WNMP lengkap dan terverifikasi berukuran **209.1 MB**.
+> **GitHub melarang commit berkas di atas 100 MB** (`GH001`), sehingga berkas biner besar tidak disimpan langsung di Git repository.
 > 
-> Berkas `payload.zip` berukuran 1 KB di repository adalah **berkas stub/placeholder** yang memastikan proyek dapat langsung dikloning dan lulus pengujian unit (`cargo test`).
+> Berkas `payload.zip` berukuran 1 KB di Git adalah **berkas stub** yang memungkinkan proyek dikloning secara cepat dan lulus seluruh *unit tests* (`cargo test`).
 > 
-> Untuk merakit `payload.zip` riil berukuran **207.38 MB**, Anda cukup menjalankan skrip otomatis [`scripts/build_payload.ps1`](file:///d:/Project/moodle_installer/scripts/build_payload.ps1) seperti yang dijelaskan pada langkah berikut.
+> Untuk rilis produksi, runtime dikemas ke dalam **wadah biner terenkripsi `payload.pak` (209.1 MB)** yang dapat diunduh langsung dari [GitHub Releases](https://github.com/cybertank378/moodle_portable/releases) atau dirakit sendiri menggunakan skrip [`scripts/build_payload.ps1`](file:///d:/Project/moodle_installer/scripts/build_payload.ps1).
 
 ---
 
 ## 🚀 Panduan Langkah demi Langkah
 
-### Langkah 1: Kloning Repositori
+### Jalur Praktis (End-User / Unduh Rilis):
+1. Buka [Halaman Rilis GitHub](https://github.com/cybertank378/moodle_portable/releases/tag/v0.2.0-beta.1).
+2. Unduh `moodle_installer.exe` dan `payload.pak` (atau arsip rilis zip).
+3. Letakkan `moodle_installer.exe` dan `payload.pak` dalam satu folder.
+4. Klik dua kali atau jalankan `.\moodle_installer.exe`. Engine akan otomatis memverifikasi dan mengekstrak runtime secara instan!
+
+---
+
+### Jalur Pengembang (Build from Source):
+
+#### Langkah 1: Kloning Repositori
 Buka PowerShell dan kloning repositori proyek ini:
 ```powershell
 git clone https://github.com/cybertank378/moodle_portable.git
@@ -99,7 +109,7 @@ cd moodle_installer
 
 ---
 
-### Langkah 2: Rakit `payload.zip` Riil
+#### Langkah 2: Rakit `payload.pak` Riil (Full Packages)
 Jalankan skrip otomasi builder:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build_payload.ps1
@@ -108,9 +118,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_payload.ps1
 Skrip ini akan secara otomatis:
 1. Mengunduh komponen resmi WNMP stack ke folder cache `.cache_downloads`.
 2. Mengekstrak dan menyusun struktur folder: `moodle/`, `php/`, `nginx/`, `mariadb/`, dan `moodledata/`.
-3. Mengonfigurasi `php.ini` dengan ekstensi wajib Moodle (`curl`, `intl`, `mbstring`, `mysqli`, `opcache`, `sodium`, `zip`).
-4. Memangkas modul pengujian Moodle (`scripts/prune_moodle.ps1`) untuk menghemat 56 MB ruang penyimpanan.
-5. Mengemas seluruh hasil staging menjadi berkas riil **`payload.zip` berukuran 207.38 MB**.
+3. Mengonfigurasi `php.ini` dengan ekstensi lengkap Moodle.
+4. Melakukan pre-inisialisasi database MariaDB sistem (`mysql_install_db.exe`).
+5. Memverifikasi 24 titik kelengkapan komponen (Zero Missing Packages).
+6. Mengemas runtime menjadi berkas aman **`payload.pak` berukuran 209.1 MB**.
 
 ---
 
