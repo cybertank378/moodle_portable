@@ -69,8 +69,9 @@ Target Installation Directory: ./runtime
 [=======>                    ]  25% [Stage 1/5] Payload Provisioning - Extracted components successfully.
 [=========>                  ]  35% [Stage 2/5] Sandbox Setup & Pruning - Configuring unified installation paths...
 [============>               ]  45% [Stage 2/5] Sandbox Setup & Pruning - Writing secure Nginx sandbox configuration...
-[===============>            ]  55% [Stage 3/5] MariaDB Database Bootstrap - Configuring MariaDB paths and buffer pool...
-[===================>        ]  70% [Stage 3/5] MariaDB Database Bootstrap - MariaDB configuration ready.
+[===============>            ]  50% [Stage 3/5] MariaDB Database Bootstrap - Configuring MariaDB paths and buffer pool...
+[=================>          ]  60% [Stage 3/5] MariaDB Database Bootstrap - Running MariaDB database installer/initialization...
+[===================>        ]  70% [Stage 3/5] MariaDB Database Bootstrap - MariaDB database installation completed.
 [======================>     ]  80% [Stage 4/5] Moodle CLI Installation - Verifying Moodle web root and dynamic routing...
 [=========================>  ]  90% [Stage 4/5] Moodle CLI Installation - Moodle environment verified.
 [==========================> ]  95% [Stage 5/5] Services Launch & Ready - Checking background daemons readiness...
@@ -177,9 +178,12 @@ Salah satu keunggulan terbesar Moodle Portable adalah **True Portability**:
 - **Dual-Mode Payload Provisioning**:
   - *Online Mode*: Mengunduh paket runtime resmi saat koneksi internet aktif.
   - *Offline Mode*: Bekerja luring penuh tanpa internet menggunakan berkas lokal `payload.pak`.
-- **Pre-Initialized Database & Zero Missing Packages**:
+- **MSI-Packaged MariaDB Dependency & Dynamic Silent Installation**:
+  - Khusus MariaDB **hanya di-pack bersih sebagai berkas dependency MSI** (`mariadb-13.0.2-winx64.msi`) ke dalam wadah `payload.pak` tanpa pra-instalasi dari mesin pembuat.
+  - Ketika proses ekstraksi runtime selesai di komputer pengguna, engine installer otomatis mengeksekusi installer resmi MariaDB MSI (`msiexec.exe /i ... /qn /norestart`) secara *silent* dan *native* di mesin pengguna.
+  - Menjamin kompatibilitas penuh, kebersihan instalasi tanpa residu, serta portabilitas dinamis sesuai direktori yang dipilih pengguna.
+- **Zero Missing Packages & Complete Ecosystem**:
   - Seluruh modul aktivitas resmi Moodle (Forum, Assignment, Quiz, Wiki, SCORM, dll.) lengkap 100%.
-  - Tabel sistem MariaDB telah diinisialisasi otomatis dari awal.
 - **Visual Progress Bar**: Menampilkan indikator kemajuan proses instalasi (0% s/d 100%) secara bertahap pada konsol.
 - **Dynamic LAN IP Routing**: Menyesuaikan routing secara dinamis sehingga LMS dapat langsung diakses oleh perangkat lain di jaringan LAN.
 - **Background Cron Scheduler**: Thread internal mengeksekusi cron Moodle otomatis setiap 60 detik tanpa memblokir sistem.
@@ -196,7 +200,7 @@ Seluruh modul dan executable beroperasi pada arsitektur **murni 64-bit (x86_64 /
 | **Moodle Core** | v5.0.11 | [Moodle.org Official Stable 500](https://packaging.moodle.org/stable500/moodle-5.0.11.zip) |
 | **PHP Runtime** | 8.2.12 x64 | [PHP for Windows (Win32-vs16-x64)](https://windows.php.net/downloads/releases/archives/php-8.2.12-Win32-vs16-x64.zip) |
 | **Nginx Server** | 1.31.7 | [Nginx.org Official Windows Build](https://nginx.org/download/nginx-1.31.7.zip) |
-| **MariaDB** | 13.0.2 x64 | [MariaDB Winx64 Mirror](https://linux.domainesia.com/mariadb///mariadb-13.0.2/winx64-packages/mariadb-13.0.2-winx64.zip) |
+| **MariaDB** | 13.0.2 x64 MSI | [MariaDB Official Community Server](https://downloads.mariadb.org/rest-api/mariadb/13.0.2/mariadb-13.0.2-winx64.msi) |
 
 ---
 

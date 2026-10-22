@@ -105,5 +105,5 @@ Write-Host "------------------------------------------" -ForegroundColor Cyan
 Write-Host "Pruning Summary:" -ForegroundColor Cyan
 Write-Host "  Items processed: $DeletedCount" -ForegroundColor White
 Write-Host "  Estimated freed: $FreedMB MB" -ForegroundColor Green
-Write-Host "  Final size:      $FinalSizeMB MB (Reduction: $Percentage%)" -ForegroundColor Green
+Write-Host "  Final size:      $($FinalSizeMB) MB (Reduction: $($Percentage)%)" -ForegroundColor Green
 Write-Host "==========================================" -ForegroundColor Cyan
