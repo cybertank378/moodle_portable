@@ -1,7 +1,7 @@
 use std::env;
 use std::process;
 use moodle_installer::{
-    provision_payload, resolve_target_directory, validate_target_directory,
+    ensure_my_ini, provision_payload, resolve_target_directory, validate_target_directory,
     InstallStage, InstallationPaths, PayloadMode, PayloadProvisionConfig,
     ProgressTracker, PAYLOAD_ZIP,
 };
@@ -135,10 +135,23 @@ fn main() {
     }
 
     // --- STAGE 3: DATABASE PREPARATION (45% - 70%) ---
-    tracker.advance(InstallStage::DatabaseBootstrap, 55, "Configuring MariaDB paths and buffer pool...");
-    let _maria_paths = paths.to_mariadb_paths();
+    tracker.advance(InstallStage::DatabaseBootstrap, 50, "Configuring MariaDB paths and buffer pool...");
+    let maria_paths = paths.to_mariadb_paths();
+    if let Err(e) = ensure_my_ini(&maria_paths.base_dir, 3306) {
+        eprintln!("[ERROR] Failed to generate MariaDB my.ini: {}", e);
+        process::exit(1);
+    }
 
-    tracker.advance(InstallStage::DatabaseBootstrap, 70, "MariaDB configuration ready.");
+    if !maria_paths.is_data_initialized() {
+        tracker.advance(InstallStage::DatabaseBootstrap, 60, "Running MariaDB database installer/initialization...");
+        if let Err(e) = maria_paths.run_installer() {
+            eprintln!("[ERROR] Failed to run MariaDB installer: {}", e);
+            process::exit(1);
+        }
+        tracker.advance(InstallStage::DatabaseBootstrap, 70, "MariaDB database installation completed.");
+    } else {
+        tracker.advance(InstallStage::DatabaseBootstrap, 70, "MariaDB database already initialized.");
+    }
 
     // --- STAGE 4: MOODLE CONFIGURATION (70% - 90%) ---
     tracker.advance(InstallStage::MoodleInstallation, 80, "Verifying Moodle web root and dynamic routing...");
