@@ -36,7 +36,7 @@ impl InstallStage {
             InstallStage::PayloadProvisioning => "Payload Provisioning",
             InstallStage::SandboxAndPruning => "Sandbox Setup & Pruning",
             InstallStage::DatabaseBootstrap => "MariaDB Database Bootstrap",
-            InstallStage::MoodleInstallation => "Moodle CLI Installation",
+            InstallStage::MoodleInstallation => "Aksaventra Core Installation",
             InstallStage::ServicesAndLaunch => "Services Launch & Ready",
         }
     }
@@ -137,14 +137,15 @@ impl Default for ProgressTracker {
 // --- CUSTOM INSTALLATION DIRECTORY RESOLUTION ---
 
 pub const DEFAULT_RUNTIME_DIR: &str = "./runtime";
-pub const ENV_INSTALL_DIR: &str = "MOODLE_INSTALL_DIR";
+pub const ENV_INSTALL_DIR: &str = "AKSAVENTRA_INSTALL_DIR";
+pub const FALLBACK_ENV_INSTALL_DIR: &str = "MOODLE_INSTALL_DIR";
 
 /// Resolves the target installation directory from CLI arguments, environment variable, or default.
 ///
 /// Precedence:
 /// 1. CLI flag: `--install-dir <PATH>`, `-d <PATH>`, `--target <PATH>`, or `-t <PATH>`
 /// 2. CLI flag format: `--install-dir=<PATH>` or `--target=<PATH>`
-/// 3. Environment variable `MOODLE_INSTALL_DIR`
+/// 3. Environment variable `AKSAVENTRA_INSTALL_DIR` (or `MOODLE_INSTALL_DIR`)
 /// 4. Fallback default: `./runtime`
 pub fn resolve_target_directory(args: &[String]) -> PathBuf {
     if let Some(cli_path) = parse_install_dir_from_args(args) {
@@ -152,6 +153,13 @@ pub fn resolve_target_directory(args: &[String]) -> PathBuf {
     }
 
     if let Ok(env_val) = env::var(ENV_INSTALL_DIR) {
+        let trimmed = env_val.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+
+    if let Ok(env_val) = env::var(FALLBACK_ENV_INSTALL_DIR) {
         let trimmed = env_val.trim();
         if !trimmed.is_empty() {
             return PathBuf::from(trimmed);
@@ -252,13 +260,13 @@ mod tests {
     #[test]
     fn test_parse_install_dir_from_args_various_flags() {
         // Space separated
-        let args1 = vec!["moodle_installer.exe".to_string(), "--install-dir".to_string(), "D:/MoodleTest".to_string()];
+        let args1 = vec!["aksaventra_installer.exe".to_string(), "--install-dir".to_string(), "D:/MoodleTest".to_string()];
         assert_eq!(parse_install_dir_from_args(&args1), Some(PathBuf::from("D:/MoodleTest")));
 
-        let args2 = vec!["moodle_installer.exe".to_string(), "-d".to_string(), "C:/Server/Moodle".to_string()];
+        let args2 = vec!["aksaventra_installer.exe".to_string(), "-d".to_string(), "C:/Server/Moodle".to_string()];
         assert_eq!(parse_install_dir_from_args(&args2), Some(PathBuf::from("C:/Server/Moodle")));
 
-        let args3 = vec!["moodle_installer.exe".to_string(), "--target".to_string(), "E:/Portable".to_string()];
+        let args3 = vec!["aksaventra_installer.exe".to_string(), "--target".to_string(), "E:/Portable".to_string()];
         assert_eq!(parse_install_dir_from_args(&args3), Some(PathBuf::from("E:/Portable")));
 
         // Equals separated
@@ -269,7 +277,7 @@ mod tests {
         assert_eq!(parse_install_dir_from_args(&args5), Some(PathBuf::from("F:/TargetEqual")));
 
         // Empty args fallback
-        let empty_args: Vec<String> = vec!["moodle_installer.exe".to_string()];
+        let empty_args: Vec<String> = vec!["aksaventra_installer.exe".to_string()];
         assert_eq!(parse_install_dir_from_args(&empty_args), None);
     }
 

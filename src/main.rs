@@ -1,15 +1,15 @@
 use std::env;
 use std::process;
-use moodle_installer::{
+use aksaventra_installer::{
     ensure_my_ini, provision_payload, resolve_target_directory, validate_target_directory,
     InstallStage, InstallationPaths, PayloadMode, PayloadProvisionConfig,
     ProgressTracker, PAYLOAD_ZIP,
 };
 
 fn print_help() {
-    println!("Moodle Portable Engine Launcher");
+    println!("Aksaventra Portable Engine Launcher");
     println!("Usage:");
-    println!("  moodle_installer.exe [OPTIONS]");
+    println!("  aksaventra_installer.exe [OPTIONS]");
     println!();
     println!("Options:");
     println!("  -d, --install-dir <PATH>              Custom directory to install/extract runtime (default: ./runtime)");
@@ -19,6 +19,7 @@ fn print_help() {
     println!("  -h, --help                            Display this help information");
     println!();
     println!("Environment Variables:");
+    println!("  AKSAVENTRA_INSTALL_DIR                Primary installation directory environment variable");
     println!("  MOODLE_INSTALL_DIR                    Fallback installation directory if CLI option is omitted");
 }
 
@@ -33,7 +34,7 @@ fn main() {
         if pos + 2 < args.len() {
             let input_zip = std::path::Path::new(&args[pos + 1]);
             let output_pak = std::path::Path::new(&args[pos + 2]);
-            match moodle_installer::pack_file_to_container(input_zip, output_pak, None) {
+            match aksaventra_installer::pack_file_to_container(input_zip, output_pak, None) {
                 Ok(bytes) => {
                     println!("[OK] Encrypted container successfully generated: {} ({} bytes)", output_pak.display(), bytes);
                     return;
@@ -44,7 +45,7 @@ fn main() {
                 }
             }
         } else {
-            eprintln!("[ERROR] Usage: moodle_installer.exe --pack-container <input.zip> <output.pak>");
+            eprintln!("[ERROR] Usage: aksaventra_installer.exe --pack-container <input.zip> <output.pak>");
             process::exit(1);
         }
     }
@@ -53,7 +54,7 @@ fn main() {
         if pos + 1 < args.len() {
             let pak_path = std::path::Path::new(&args[pos + 1]);
             match std::fs::read(pak_path) {
-                Ok(bytes) => match moodle_installer::unpack_container_bytes(&bytes, None) {
+                Ok(bytes) => match aksaventra_installer::unpack_container_bytes(&bytes, None) {
                     Ok(plain) => {
                         println!("[OK] Container is authentic and valid! Decrypted payload size: {} bytes", plain.len());
                         return;
@@ -69,13 +70,13 @@ fn main() {
                 }
             }
         } else {
-            eprintln!("[ERROR] Usage: moodle_installer.exe --verify-container <container.pak>");
+            eprintln!("[ERROR] Usage: aksaventra_installer.exe --verify-container <container.pak>");
             process::exit(1);
         }
     }
 
     println!("==========================================================");
-    println!("          Moodle Portable 64-bit Engine Initializing      ");
+    println!("          Aksaventra Portable 64-bit Engine Initializing      ");
     println!("==========================================================");
 
     let mut tracker = ProgressTracker::new().with_bar_width(28);
@@ -153,11 +154,11 @@ fn main() {
         tracker.advance(InstallStage::DatabaseBootstrap, 70, "MariaDB database already initialized.");
     }
 
-    // --- STAGE 4: MOODLE CONFIGURATION (70% - 90%) ---
-    tracker.advance(InstallStage::MoodleInstallation, 80, "Verifying Moodle web root and dynamic routing...");
+    // --- STAGE 4: AKSAVENTRA CONFIGURATION (70% - 90%) ---
+    tracker.advance(InstallStage::MoodleInstallation, 80, "Verifying Aksaventra web root and dynamic routing...");
     let _moodle_paths = paths.to_moodle_paths();
 
-    tracker.advance(InstallStage::MoodleInstallation, 90, "Moodle environment verified.");
+    tracker.advance(InstallStage::MoodleInstallation, 90, "Aksaventra environment verified.");
 
     // --- STAGE 5: SERVICES & LAUNCH READY (90% - 100%) ---
     tracker.advance(InstallStage::ServicesAndLaunch, 95, "Checking background daemons readiness...");
@@ -168,8 +169,8 @@ fn main() {
 
     println!();
     println!("Active Installation Components:");
-    println!("  - Moodle Web Root:    {}", paths.moodle_dir.display());
-    println!("  - Moodledata Storage: {}", paths.moodledata_dir.display());
+    println!("  - Aksaventra Web Root:    {}", paths.moodle_dir.display());
+    println!("  - Aksaventra Data Storage: {}", paths.moodledata_dir.display());
     println!("  - Nginx Server:       {}", paths.nginx_dir.display());
     println!("  - PHP 8.2 Runtime:    {}", paths.php_dir.display());
     println!("  - MariaDB Database:   {}", paths.mariadb_dir.display());
