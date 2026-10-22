@@ -96,14 +96,34 @@ impl MariaDbPaths {
         cmd
     }
 
-    /// Constructs the `Command` to execute the MariaDB MSI installer package.
+    /// Constructs the `Command` to execute the MariaDB MSI installer package via administrative portable extraction.
     pub fn build_msi_install_command(&self) -> Command {
+        self.build_msi_install_command_with_target(&self.base_dir)
+    }
+
+    /// Constructs the `Command` to execute the MariaDB MSI installer package targeted to a specific directory.
+    pub fn build_msi_install_command_with_target(&self, target_dir: &Path) -> Command {
+        let abs_msi = if self.msi_installer.is_absolute() {
+            self.msi_installer.clone()
+        } else {
+            std::env::current_dir()
+                .unwrap_or_default()
+                .join(&self.msi_installer)
+        };
+        let abs_target = if target_dir.is_absolute() {
+            target_dir.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .unwrap_or_default()
+                .join(target_dir)
+        };
+
         let mut cmd = Command::new("msiexec.exe");
         cmd.args([
-            "/i",
-            &self.msi_installer.to_string_lossy(),
+            "/a",
+            &abs_msi.to_string_lossy(),
             "/qn",
-            "/norestart",
+            &format!("TARGETDIR={}", abs_target.to_string_lossy()),
         ]);
         cmd
     }
@@ -114,37 +134,72 @@ impl MariaDbPaths {
             return Ok(());
         }
 
-        // 1. If MSI installer dependency exists, execute silent MSI installation
+        // 1. If MSI installer dependency exists, execute silent portable MSI administrative extraction
         if self.msi_installer.exists() {
-            let mut cmd = self.build_msi_install_command();
-            let status = run_silent_status(&mut cmd)?;
-            if status.success() {
-                return Ok(());
+            let abs_base = if self.base_dir.is_absolute() {
+                self.base_dir.clone()
             } else {
+                std::env::current_dir()
+                    .unwrap_or_default()
+                    .join(&self.base_dir)
+            };
+
+            let extract_target = abs_base.join("extracted_msi");
+            if extract_target.exists() {
+                let _ = fs::remove_dir_all(&extract_target);
+            }
+            fs::create_dir_all(&extract_target)?;
+
+            let mut cmd = self.build_msi_install_command_with_target(&extract_target);
+            cmd.current_dir(&abs_base);
+            let status = run_silent_status(&mut cmd)?;
+            if !status.success() {
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
-                    format!("MariaDB MSI installation failed with exit code: {:?}", status.code()),
+                    format!("MariaDB MSI administrative unpack failed with exit code: {:?}", status.code()),
                 ));
             }
+
+            // Move extracted contents (e.g. "MariaDB 13.0") into base_dir
+            if let Ok(entries) = fs::read_dir(&extract_target) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() && (path.join("bin").exists() || path.to_string_lossy().contains("MariaDB")) {
+                        if let Ok(sub_entries) = fs::read_dir(&path) {
+                            for sub in sub_entries.flatten() {
+                                let dest = abs_base.join(sub.file_name());
+                                if !dest.exists() {
+                                    let _ = fs::rename(sub.path(), &dest);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            let _ = fs::remove_dir_all(&extract_target);
         }
 
         // 2. If standalone mysql_install_db binary exists, execute binary initialization
-        if self.installer_exe.exists() {
+        let installer_bin = if self.installer_exe.exists() {
+            self.installer_exe.clone()
+        } else if self.base_dir.join("bin").join("mysql_install_db.exe").exists() {
+            self.base_dir.join("bin").join("mysql_install_db.exe")
+        } else {
+            PathBuf::new()
+        };
+
+        if installer_bin.exists() && !self.is_data_initialized() {
             if let Some(parent) = self.data_dir.parent() {
                 fs::create_dir_all(parent)?;
             }
             fs::create_dir_all(&self.data_dir)?;
 
-            let mut cmd = self.build_installer_command();
-            let status = run_silent_status(&mut cmd)?;
-            if status.success() {
-                return Ok(());
-            } else {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("MariaDB installer failed with exit code: {:?}", status.code()),
-                ));
-            }
+            let mut cmd = create_silent_command(&installer_bin);
+            let datadir_arg = format!("--datadir={}", self.data_dir.to_string_lossy().replace('\\', "/"));
+            cmd.args([&datadir_arg, "--default-storage-engine=InnoDB"]);
+            cmd.current_dir(&self.base_dir);
+            let _ = run_silent_status(&mut cmd);
         }
 
         Ok(())
@@ -357,8 +412,9 @@ mod tests {
         let msi_cmd = paths.build_msi_install_command();
         let debug_msi = format!("{:?}", msi_cmd);
         assert!(debug_msi.contains("msiexec.exe"));
-        assert!(debug_msi.contains("/i"));
+        assert!(debug_msi.contains("/a"));
         assert!(debug_msi.contains("/qn"));
+        assert!(debug_msi.contains("TARGETDIR="));
 
         // Simulate initialization
         fs::create_dir_all(paths.data_dir.join("mysql")).unwrap();
