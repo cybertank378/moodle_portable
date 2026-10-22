@@ -4,3 +4,4 @@
 /staging_payload
 /scratch
 *.pak
+/.temp_*
