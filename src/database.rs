@@ -20,6 +20,8 @@ pub struct MariaDbPaths {
     pub my_ini_path: PathBuf,
     pub server_exe: PathBuf,
     pub client_exe: PathBuf,
+    pub installer_exe: PathBuf,
+    pub msi_installer: PathBuf,
 }
 
 impl MariaDbPaths {
@@ -48,6 +50,26 @@ impl MariaDbPaths {
             bin_dir.join("mysql.exe")
         };
 
+        let installer_exe = if bin_dir.join("mysql_install_db.exe").exists() {
+            bin_dir.join("mysql_install_db.exe")
+        } else if bin_dir.join("mariadb-install-db.exe").exists() {
+            bin_dir.join("mariadb-install-db.exe")
+        } else {
+            bin_dir.join("mysql_install_db.exe")
+        };
+
+        let msi_installer = if base_dir.join("mariadb-13.0.2-winx64.msi").exists() {
+            base_dir.join("mariadb-13.0.2-winx64.msi")
+        } else if let Some(parent) = base_dir.parent() {
+            if parent.join("mariadb-13.0.2-winx64.msi").exists() {
+                parent.join("mariadb-13.0.2-winx64.msi")
+            } else {
+                base_dir.join("mariadb-13.0.2-winx64.msi")
+            }
+        } else {
+            base_dir.join("mariadb-13.0.2-winx64.msi")
+        };
+
         Self {
             base_dir,
             bin_dir,
@@ -55,7 +77,77 @@ impl MariaDbPaths {
             my_ini_path,
             server_exe,
             client_exe,
+            installer_exe,
+            msi_installer,
         }
+    }
+
+    /// Checks if MariaDB system database has already been initialized.
+    pub fn is_data_initialized(&self) -> bool {
+        self.data_dir.join("mysql").exists()
+    }
+
+    /// Constructs the `Command` to run the MariaDB database installer/initialization.
+    pub fn build_installer_command(&self) -> Command {
+        let mut cmd = create_silent_command(&self.installer_exe);
+        let datadir_arg = format!("--datadir={}", self.data_dir.to_string_lossy().replace('\\', "/"));
+        cmd.args([&datadir_arg, "--default-storage-engine=InnoDB"]);
+        cmd.current_dir(&self.base_dir);
+        cmd
+    }
+
+    /// Constructs the `Command` to execute the MariaDB MSI installer package.
+    pub fn build_msi_install_command(&self) -> Command {
+        let mut cmd = Command::new("msiexec.exe");
+        cmd.args([
+            "/i",
+            &self.msi_installer.to_string_lossy(),
+            "/qn",
+            "/norestart",
+        ]);
+        cmd
+    }
+
+    /// Executes the MariaDB installer/initialization on the target machine when payload extraction completes.
+    pub fn run_installer(&self) -> io::Result<()> {
+        if self.is_data_initialized() {
+            return Ok(());
+        }
+
+        // 1. If MSI installer dependency exists, execute silent MSI installation
+        if self.msi_installer.exists() {
+            let mut cmd = self.build_msi_install_command();
+            let status = run_silent_status(&mut cmd)?;
+            if status.success() {
+                return Ok(());
+            } else {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("MariaDB MSI installation failed with exit code: {:?}", status.code()),
+                ));
+            }
+        }
+
+        // 2. If standalone mysql_install_db binary exists, execute binary initialization
+        if self.installer_exe.exists() {
+            if let Some(parent) = self.data_dir.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::create_dir_all(&self.data_dir)?;
+
+            let mut cmd = self.build_installer_command();
+            let status = run_silent_status(&mut cmd)?;
+            if status.success() {
+                return Ok(());
+            } else {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("MariaDB installer failed with exit code: {:?}", status.code()),
+                ));
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -176,6 +268,8 @@ pub fn create_database_with_params<P: AsRef<Path>>(base_dir: P, port: u16, db_na
 /// 3. Waits for TCP port 3306 readiness (up to 5s).
 /// 4. Provisions the `moodle` database with `utf8mb4_unicode_ci`.
 pub fn bootstrap_mariadb<P: AsRef<Path>>(mariadb_dir: P, port: u16) -> io::Result<Child> {
+    let paths = MariaDbPaths::new(&mariadb_dir);
+    let _ = paths.run_installer();
     ensure_my_ini(&mariadb_dir, port)?;
     let child = start_mariadb(&mariadb_dir)?;
 
@@ -245,5 +339,31 @@ mod tests {
         // Port 1 is typically closed
         let is_ready = wait_for_mariadb_ready(1, Duration::from_millis(400));
         assert!(!is_ready, "Probing closed port should timeout and return false");
+    }
+
+    #[test]
+    fn test_build_installer_command_and_initialized_check() {
+        let temp_dir = std::env::temp_dir().join(format!("maria_test_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        let paths = MariaDbPaths::new(&temp_dir);
+        assert!(!paths.is_data_initialized(), "New path should not be data-initialized");
+
+        let cmd = paths.build_installer_command();
+        let debug_cmd = format!("{:?}", cmd);
+        assert!(debug_cmd.contains("--datadir="));
+        assert!(debug_cmd.contains("--default-storage-engine=InnoDB"));
+
+        let msi_cmd = paths.build_msi_install_command();
+        let debug_msi = format!("{:?}", msi_cmd);
+        assert!(debug_msi.contains("msiexec.exe"));
+        assert!(debug_msi.contains("/i"));
+        assert!(debug_msi.contains("/qn"));
+
+        // Simulate initialization
+        fs::create_dir_all(paths.data_dir.join("mysql")).unwrap();
+        assert!(paths.is_data_initialized(), "Data should be reported initialized when mysql dir exists");
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

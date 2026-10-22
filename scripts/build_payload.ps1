@@ -65,8 +65,8 @@ $Downloads = @{
         MinSize = 1MB
     }
     "mariadb" = @{
-        Url = "https://linux.domainesia.com/mariadb///mariadb-13.0.2/winx64-packages/mariadb-13.0.2-winx64.zip"
-        File = Join-Path $CachePath "mariadb-13.0.2-winx64.zip"
+        Url = "https://downloads.mariadb.org/rest-api/mariadb/13.0.2/mariadb-13.0.2-winx64.msi"
+        File = Join-Path $CachePath "mariadb-13.0.2-winx64.msi"
         MinSize = 50MB
     }
 }
@@ -108,7 +108,14 @@ foreach ($key in $Downloads.Keys) {
 Write-Host "`n[2/5] Preparing Staging Directory: $StagingPath..." -ForegroundColor Yellow
 if (Test-Path $StagingPath) {
     Write-Host "  Cleaning existing staging directory..."
-    Remove-Item -Path $StagingPath -Recurse -Force
+    cmd.exe /c "rmdir /s /q `"$StagingPath`"" 2>$null
+    if (Test-Path $StagingPath) {
+        Start-Sleep -Milliseconds 600
+        cmd.exe /c "rmdir /s /q `"$StagingPath`"" 2>$null
+    }
+    if (Test-Path $StagingPath) {
+        Remove-Item -Path $StagingPath -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 New-Item -ItemType Directory -Path $StagingPath -Force | Out-Null
 
@@ -127,11 +134,15 @@ Write-Host "`n[3/5] Extracting & Configuring Components..." -ForegroundColor Yel
 
 # 3.1 Nginx
 Write-Host "  -> Extracting Nginx..." -ForegroundColor White
-$tempNginx = Join-Path $StagingPath "temp_nginx"
+$tempNginx = Join-Path $ProjectRoot ".temp_nginx_extract"
+if (Test-Path $tempNginx) {
+    cmd.exe /c "rmdir /s /q `"$tempNginx`"" 2>$null
+    Remove-Item -Path $tempNginx -Recurse -Force -ErrorAction SilentlyContinue
+}
 Expand-Archive -Path $Downloads["nginx"].File -DestinationPath $tempNginx -Force
 $nginxFolder = Get-ChildItem -Path $tempNginx -Directory | Select-Object -First 1
-Move-Item -Path $nginxFolder.FullName -Destination $NginxStaging
-Remove-Item -Path $tempNginx -Recurse -Force
+Move-Item -Path $nginxFolder.FullName -Destination $NginxStaging -Force
+cmd.exe /c "rmdir /s /q `"$tempNginx`"" 2>$null
 
 # Create logs and temp directories required by Nginx
 $nginxLogs = Join-Path $NginxStaging "logs"
@@ -221,53 +232,32 @@ opcache.fast_shutdown = 1
 Set-Content -Path (Join-Path $PhpStaging "php.ini") -Value $phpIniContent -Encoding utf8
 Write-Host "     PHP 8.2 configured with Moodle requirements." -ForegroundColor Green
 
-# 3.3 MariaDB 13.0.2 x64
-Write-Host "  -> Extracting MariaDB 13.0.2 x64..." -ForegroundColor White
-$tempMaria = Join-Path $StagingPath "temp_mariadb"
-Expand-Archive -Path $Downloads["mariadb"].File -DestinationPath $tempMaria -Force
-$mariaFolder = Get-ChildItem -Path $tempMaria -Directory | Select-Object -First 1
-Move-Item -Path $mariaFolder.FullName -Destination $MariaDbStaging
-Remove-Item -Path $tempMaria -Recurse -Force
-
-# Prune non-essential MariaDB files (debug symbols, tests, sql-bench) to save space
-Write-Host "  -> Pruning non-essential MariaDB directories (sql-bench, mysql-test)..." -ForegroundColor White
-$mariaPruneTargets = @("sql-bench", "mysql-test", "docs", "man")
-foreach ($target in $mariaPruneTargets) {
-    $targetPath = Join-Path $MariaDbStaging $target
-    if (Test-Path $targetPath) {
-        Remove-Item -Path $targetPath -Recurse -Force -ErrorAction SilentlyContinue
-    }
-}
-Write-Host "     MariaDB extracted and optimized." -ForegroundColor Green
-
-# 3.3.1 Pre-initialize MariaDB system data directory
-Write-Host "  -> Pre-initializing MariaDB system tables..." -ForegroundColor White
-$mariaDataDir = Join-Path $MariaDbStaging "data"
-if (!(Test-Path $mariaDataDir)) {
-    New-Item -ItemType Directory -Path $mariaDataDir -Force | Out-Null
-}
-$installDbExe = Join-Path $MariaDbStaging "bin\mysql_install_db.exe"
-if (Test-Path $installDbExe) {
-    & $installDbExe "--datadir=$mariaDataDir" "--default-storage-engine=InnoDB" | Out-Null
-    Write-Host "     MariaDB system data pre-initialized successfully." -ForegroundColor Green
-} else {
-    Write-Warning "mysql_install_db.exe not found in $MariaDbStaging\bin, skipping pre-initialization."
-}
+# 3.3 MariaDB 13.0.2 x64 MSI Dependency
+Write-Host "  -> Packing MariaDB 13.0.2 x64 MSI Dependency..." -ForegroundColor White
+New-Item -ItemType Directory -Path $MariaDbStaging -Force | Out-Null
+$targetMsi = Join-Path $MariaDbStaging "mariadb-13.0.2-winx64.msi"
+Copy-Item -Path $Downloads["mariadb"].File -Destination $targetMsi -Force
+Write-Host "     MariaDB MSI dependency packed (not installed): $targetMsi" -ForegroundColor Green
 
 # 3.4 Moodle 5.0.11
 Write-Host "  -> Extracting Moodle 5.0.11..." -ForegroundColor White
-$tempMoodle = Join-Path $StagingPath "temp_moodle"
+$tempMoodle = Join-Path $ProjectRoot ".temp_moodle_extract"
+if (Test-Path $tempMoodle) {
+    cmd.exe /c "rmdir /s /q `"$tempMoodle`"" 2>$null
+    Remove-Item -Path $tempMoodle -Recurse -Force -ErrorAction SilentlyContinue
+}
 Expand-Archive -Path $Downloads["moodle"].File -DestinationPath $tempMoodle -Force
 $moodleFolder = Join-Path $tempMoodle "moodle"
 if (Test-Path $moodleFolder) {
-    Move-Item -Path $moodleFolder -Destination $MoodleStaging
+    Move-Item -Path $moodleFolder -Destination $MoodleStaging -Force
 } else {
-    Move-Item -Path $tempMoodle -Destination $MoodleStaging
+    Move-Item -Path $tempMoodle -Destination $MoodleStaging -Force
 }
 if (Test-Path $tempMoodle) {
+    cmd.exe /c "rmdir /s /q `"$tempMoodle`"" 2>$null
     Remove-Item -Path $tempMoodle -Recurse -Force -ErrorAction SilentlyContinue
 }
-Write-Host "     Moodle extracted." -ForegroundColor Green
+Write-Host "     Moodle extracted to: $MoodleStaging" -ForegroundColor Green
 
 # --- 4. PRUNE MOODLE (NFR-03) ---
 Write-Host "`n[4/6] Pruning Moodle Core (scripts/prune_moodle.ps1)..." -ForegroundColor Yellow
@@ -300,10 +290,7 @@ $RequiredItems = @(
     @{ Path = Join-Path $NginxStaging "nginx.exe"; Label = "Nginx Web Server Binary (nginx.exe)" },
     @{ Path = Join-Path $NginxStaging "conf\mime.types"; Label = "Nginx MIME Types Configuration" },
     @{ Path = Join-Path $NginxStaging "conf\fastcgi_params"; Label = "Nginx FastCGI Parameters" },
-    @{ Path = Join-Path $MariaDbStaging "bin\mariadbd.exe"; Fallback = Join-Path $MariaDbStaging "bin\mysqld.exe"; Label = "MariaDB Daemon Binary" },
-    @{ Path = Join-Path $MariaDbStaging "bin\mariadb.exe"; Fallback = Join-Path $MariaDbStaging "bin\mysql.exe"; Label = "MariaDB CLI Client" },
-    @{ Path = Join-Path $MariaDbStaging "bin\mariadb-admin.exe"; Fallback = Join-Path $MariaDbStaging "bin\mysqladmin.exe"; Label = "MariaDB Admin Utility" },
-    @{ Path = Join-Path $MariaDbStaging "share\english\errmsg.sys"; Label = "MariaDB Error Messages (errmsg.sys)" },
+    @{ Path = Join-Path $MariaDbStaging "mariadb-13.0.2-winx64.msi"; Label = "MariaDB MSI Installer Dependency (mariadb-13.0.2-winx64.msi)" },
     @{ Path = Join-Path $MoodledataStaging ".gitkeep"; Label = "Moodledata Directory" }
 )
 
@@ -324,6 +311,13 @@ foreach ($item in $RequiredItems) {
 if ($MissingCount -gt 0) {
     throw "Package verification failed: $MissingCount critical components are missing from staging! Cannot build container."
 }
+
+# Explicitly assert MariaDB is NOT pre-installed in the payload staging
+$mariaMysqlDb = Join-Path $MariaDbStaging "data"
+if (Test-Path $mariaMysqlDb) {
+    throw "Integrity error: MariaDB data directory ($mariaMysqlDb) exists in staging! MariaDB must only be packed clean as an MSI dependency."
+}
+Write-Host "  [OK] MariaDB verified clean-packed as MSI dependency (uninstalled, ready for installation on user machine)" -ForegroundColor Green
 Write-Host "  All required packages and components verified 100% complete!" -ForegroundColor Green
 
 # --- 5. COMPRESS INTO PAYLOAD.ZIP ---
