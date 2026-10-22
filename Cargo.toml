@@ -1,5 +1,5 @@
 [package]
-name = "moodle_installer"
+name = "aksaventra_installer"
 version = "0.2.0-beta.1"
 edition = "2024"
 

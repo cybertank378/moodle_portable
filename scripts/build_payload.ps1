@@ -35,7 +35,7 @@ param (
 $ErrorActionPreference = "Stop"
 
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "  Moodle Portable 64-bit Payload Builder" -ForegroundColor Cyan
+Write-Host "  Aksaventra Portable 64-bit Payload Builder" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 # Resolve absolute paths
@@ -49,24 +49,24 @@ if (!(Test-Path $CachePath)) {
 }
 
 $Downloads = @{
-    "moodle" = @{
-        Url = "https://download.moodle.org/download.php/direct/stable500/moodle-5.0.11.zip"
-        File = Join-Path $CachePath "moodle-5.0.11.zip"
+    "moodle"  = @{
+        Url     = "https://download.moodle.org/download.php/direct/stable500/moodle-5.0.11.zip"
+        File    = Join-Path $CachePath "moodle-5.0.11.zip"
         MinSize = 50MB
     }
-    "php" = @{
-        Url = "https://windows.php.net/downloads/releases/archives/php-8.2.12-Win32-vs16-x64.zip"
-        File = Join-Path $CachePath "php-8.2.12-Win32-vs16-x64.zip"
+    "php"     = @{
+        Url     = "https://windows.php.net/downloads/releases/archives/php-8.2.12-Win32-vs16-x64.zip"
+        File    = Join-Path $CachePath "php-8.2.12-Win32-vs16-x64.zip"
         MinSize = 20MB
     }
-    "nginx" = @{
-        Url = "https://nginx.org/download/nginx-1.31.7.zip"
-        File = Join-Path $CachePath "nginx-1.31.7.zip"
+    "nginx"   = @{
+        Url     = "https://nginx.org/download/nginx-1.31.7.zip"
+        File    = Join-Path $CachePath "nginx-1.31.7.zip"
         MinSize = 1MB
     }
     "mariadb" = @{
-        Url = "https://downloads.mariadb.org/rest-api/mariadb/13.0.2/mariadb-13.0.2-winx64.msi"
-        File = Join-Path $CachePath "mariadb-13.0.2-winx64.msi"
+        Url     = "https://downloads.mariadb.org/rest-api/mariadb/13.0.2/mariadb-13.0.2-winx64.msi"
+        File    = Join-Path $CachePath "mariadb-13.0.2-winx64.msi"
         MinSize = 50MB
     }
 }
@@ -85,7 +85,8 @@ foreach ($key in $Downloads.Keys) {
         if ($size -ge $min) {
             Write-Host "  [OK] Cached $key exists ($([math]::Round($size/1MB, 2)) MB)" -ForegroundColor Green
             $needsDownload = $false
-        } else {
+        }
+        else {
             Write-Warning "  [WARN] Cached $key file is too small ($size bytes). Re-downloading..."
         }
     }
@@ -159,8 +160,8 @@ Write-Host "  -> Extracting PHP 8.2 x64..." -ForegroundColor White
 New-Item -ItemType Directory -Path $PhpStaging -Force | Out-Null
 Expand-Archive -Path $Downloads["php"].File -DestinationPath $PhpStaging -Force
 
-# Generate php.ini configured for Moodle
-Write-Host "  -> Generating optimized php.ini for Moodle..." -ForegroundColor White
+# Generate php.ini configured for Aksaventra
+Write-Host "  -> Generating optimized php.ini for Aksaventra..." -ForegroundColor White
 $phpIniContent = @"
 [PHP]
 engine = On
@@ -202,7 +203,7 @@ default_socket_timeout = 60
 
 extension_dir = "ext"
 
-; Required extensions for Moodle
+; Required extensions for Aksaventra
 extension=curl
 extension=fileinfo
 extension=gd
@@ -230,7 +231,7 @@ opcache.revalidate_freq = 60
 opcache.fast_shutdown = 1
 "@
 Set-Content -Path (Join-Path $PhpStaging "php.ini") -Value $phpIniContent -Encoding utf8
-Write-Host "     PHP 8.2 configured with Moodle requirements." -ForegroundColor Green
+Write-Host "     PHP 8.2 configured with Aksaventra requirements." -ForegroundColor Green
 
 # 3.3 MariaDB 13.0.2 x64 MSI Dependency
 Write-Host "  -> Packing MariaDB 13.0.2 x64 MSI Dependency..." -ForegroundColor White
@@ -239,8 +240,8 @@ $targetMsi = Join-Path $MariaDbStaging "mariadb-13.0.2-winx64.msi"
 Copy-Item -Path $Downloads["mariadb"].File -Destination $targetMsi -Force
 Write-Host "     MariaDB MSI dependency packed (not installed): $targetMsi" -ForegroundColor Green
 
-# 3.4 Moodle 5.0.11
-Write-Host "  -> Extracting Moodle 5.0.11..." -ForegroundColor White
+# 3.4 Aksaventra Core System 5.0.11
+Write-Host "  -> Extracting Aksaventra Core System 5.0.11..." -ForegroundColor White
 $tempMoodle = Join-Path $ProjectRoot ".temp_moodle_extract"
 if (Test-Path $tempMoodle) {
     cmd.exe /c "rmdir /s /q `"$tempMoodle`"" 2>$null
@@ -250,30 +251,32 @@ Expand-Archive -Path $Downloads["moodle"].File -DestinationPath $tempMoodle -For
 $moodleFolder = Join-Path $tempMoodle "moodle"
 if (Test-Path $moodleFolder) {
     Move-Item -Path $moodleFolder -Destination $MoodleStaging -Force
-} else {
+}
+else {
     Move-Item -Path $tempMoodle -Destination $MoodleStaging -Force
 }
 if (Test-Path $tempMoodle) {
     cmd.exe /c "rmdir /s /q `"$tempMoodle`"" 2>$null
     Remove-Item -Path $tempMoodle -Recurse -Force -ErrorAction SilentlyContinue
 }
-Write-Host "     Moodle extracted to: $MoodleStaging" -ForegroundColor Green
+Write-Host "     Aksaventra Core extracted to: $MoodleStaging" -ForegroundColor Green
 
-# --- 4. PRUNE MOODLE (NFR-03) ---
-Write-Host "`n[4/6] Pruning Moodle Core (scripts/prune_moodle.ps1)..." -ForegroundColor Yellow
+# --- 4. PRUNE ENGINE CORE (NFR-03) ---
+Write-Host "`n[4/6] Pruning Aksaventra Core (scripts/prune_moodle.ps1)..." -ForegroundColor Yellow
 $pruneScript = Join-Path $ProjectRoot "scripts/prune_moodle.ps1"
 if (Test-Path $pruneScript) {
     & $pruneScript -MoodlePath $MoodleStaging
-} else {
-    Write-Warning "Prune script not found at $pruneScript, skipping Moodle pruning."
+}
+else {
+    Write-Warning "Prune script not found at $pruneScript, skipping pruning."
 }
 
 # --- 4.1 COMPREHENSIVE PACKAGE COMPLETENESS VERIFICATION ---
 Write-Host "`nVerifying Complete Package Integrity (Zero Missing Components)..." -ForegroundColor Yellow
 $RequiredItems = @(
-    @{ Path = Join-Path $MoodleStaging "index.php"; Label = "Moodle Web Root (index.php)" },
-    @{ Path = Join-Path $MoodleStaging "version.php"; Label = "Moodle Version Definition (version.php)" },
-    @{ Path = Join-Path $MoodleStaging "admin\cli\install.php"; Label = "Moodle CLI Installer (admin/cli/install.php)" },
+    @{ Path = Join-Path $MoodleStaging "index.php"; Label = "Aksaventra Web Root (index.php)" },
+    @{ Path = Join-Path $MoodleStaging "version.php"; Label = "Aksaventra Version Definition (version.php)" },
+    @{ Path = Join-Path $MoodleStaging "admin\cli\install.php"; Label = "Aksaventra CLI Installer (admin/cli/install.php)" },
     @{ Path = Join-Path $PhpStaging "php.exe"; Label = "PHP 8.2 CLI Binary (php.exe)" },
     @{ Path = Join-Path $PhpStaging "php-cgi.exe"; Label = "PHP 8.2 FastCGI Binary (php-cgi.exe)" },
     @{ Path = Join-Path $PhpStaging "php.ini"; Label = "PHP Configuration (php.ini)" },
@@ -291,7 +294,7 @@ $RequiredItems = @(
     @{ Path = Join-Path $NginxStaging "conf\mime.types"; Label = "Nginx MIME Types Configuration" },
     @{ Path = Join-Path $NginxStaging "conf\fastcgi_params"; Label = "Nginx FastCGI Parameters" },
     @{ Path = Join-Path $MariaDbStaging "mariadb-13.0.2-winx64.msi"; Label = "MariaDB MSI Installer Dependency (mariadb-13.0.2-winx64.msi)" },
-    @{ Path = Join-Path $MoodledataStaging ".gitkeep"; Label = "Moodledata Directory" }
+    @{ Path = Join-Path $MoodledataStaging ".gitkeep"; Label = "Aksaventra Data Directory" }
 )
 
 $MissingCount = 0
@@ -302,7 +305,8 @@ foreach ($item in $RequiredItems) {
     }
     if ($exists) {
         Write-Host "  [OK] $($item.Label)" -ForegroundColor Green
-    } else {
+    }
+    else {
         Write-Host "  [MISSING] $($item.Label): $($item.Path)" -ForegroundColor Red
         $MissingCount++
     }
