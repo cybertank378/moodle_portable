@@ -58,16 +58,25 @@ impl MariaDbPaths {
             bin_dir.join("mysql_install_db.exe")
         };
 
-        let msi_installer = if base_dir.join("mariadb-13.0.2-winx64.msi").exists() {
-            base_dir.join("mariadb-13.0.2-winx64.msi")
-        } else if let Some(parent) = base_dir.parent() {
-            if parent.join("mariadb-13.0.2-winx64.msi").exists() {
-                parent.join("mariadb-13.0.2-winx64.msi")
-            } else {
-                base_dir.join("mariadb-13.0.2-winx64.msi")
-            }
-        } else {
-            base_dir.join("mariadb-13.0.2-winx64.msi")
+        let msi_installer = {
+            let find_msi_in = |dir: &Path| -> Option<PathBuf> {
+                if let Ok(entries) = fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_file()
+                            && path.extension().map_or(false, |ext| ext.eq_ignore_ascii_case("msi"))
+                            && path.to_string_lossy().to_ascii_lowercase().contains("mariadb")
+                        {
+                            return Some(path);
+                        }
+                    }
+                }
+                None
+            };
+
+            find_msi_in(&base_dir)
+                .or_else(|| base_dir.parent().and_then(find_msi_in))
+                .unwrap_or_else(|| base_dir.join("mariadb-11.4.2-winx64.msi"))
         };
 
         Self {
@@ -96,9 +105,25 @@ impl MariaDbPaths {
         cmd
     }
 
-    /// Constructs the `Command` to execute the MariaDB MSI installer package via administrative portable extraction.
+    /// Constructs the `Command` to execute the MariaDB MSI installer package with logging.
     pub fn build_msi_install_command(&self) -> Command {
-        self.build_msi_install_command_with_target(&self.base_dir)
+        let abs_msi = if self.msi_installer.is_absolute() {
+            self.msi_installer.clone()
+        } else {
+            std::env::current_dir()
+                .unwrap_or_default()
+                .join(&self.msi_installer)
+        };
+        let log_path = self.base_dir.join("mariadb-install-log.txt");
+
+        let mut cmd = Command::new("msiexec.exe");
+        cmd.args([
+            "/i",
+            &abs_msi.to_string_lossy(),
+            "/l*v",
+            &log_path.to_string_lossy(),
+        ]);
+        cmd
     }
 
     /// Constructs the `Command` to execute the MariaDB MSI installer package targeted to a specific directory.
@@ -412,9 +437,9 @@ mod tests {
         let msi_cmd = paths.build_msi_install_command();
         let debug_msi = format!("{:?}", msi_cmd);
         assert!(debug_msi.contains("msiexec.exe"));
-        assert!(debug_msi.contains("/a"));
-        assert!(debug_msi.contains("/qn"));
-        assert!(debug_msi.contains("TARGETDIR="));
+        assert!(debug_msi.contains("/i"));
+        assert!(debug_msi.contains("/l*v"));
+        assert!(debug_msi.contains("mariadb-install-log.txt"));
 
         // Simulate initialization
         fs::create_dir_all(paths.data_dir.join("mysql")).unwrap();

@@ -21,7 +21,7 @@ dependencies = [
 
 [[package]]
 name = "aksaventra_installer"
-version = "0.2.0-beta.1"
+version = "0.2.0"
 dependencies = [
  "ctrlc",
  "sha2",

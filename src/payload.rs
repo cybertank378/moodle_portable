@@ -94,21 +94,30 @@ pub fn resolve_offline_payload_path(config: &PayloadProvisionConfig) -> Option<P
         }
     }
 
-    // 2. Relative to runtime dir (prefer .pak over .zip)
-    let candidates = [
-        config.runtime_dir.join(DEFAULT_OFFLINE_CONTAINER_NAME),
-        config.runtime_dir.join(DEFAULT_CONTAINER_NAME),
-        PathBuf::from(DEFAULT_OFFLINE_CONTAINER_NAME),
-        PathBuf::from(DEFAULT_CONTAINER_NAME),
-        config.runtime_dir.join(DEFAULT_OFFLINE_PAYLOAD_NAME),
-        config.runtime_dir.join("payload.zip"),
-        PathBuf::from(DEFAULT_OFFLINE_PAYLOAD_NAME),
-        PathBuf::from("payload.zip"),
+    // 2. Discover directory where current executable is running
+    let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
+
+    // 3. Search directories in order: exe_dir, runtime_dir, current_dir
+    let mut search_dirs = Vec::new();
+    if let Some(ref dir) = exe_dir {
+        search_dirs.push(dir.clone());
+    }
+    search_dirs.push(config.runtime_dir.clone());
+    search_dirs.push(PathBuf::from("."));
+
+    let filenames = [
+        DEFAULT_CONTAINER_NAME,          // "payload.pak"
+        DEFAULT_OFFLINE_CONTAINER_NAME,  // "offline_payload.pak"
+        "payload.zip",
+        DEFAULT_OFFLINE_PAYLOAD_NAME,    // "offline_payload.zip"
     ];
 
-    for candidate in candidates {
-        if candidate.is_file() {
-            return Some(candidate);
+    for dir in &search_dirs {
+        for name in &filenames {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
         }
     }
 
@@ -189,18 +198,18 @@ pub fn provision_payload(
     embedded_fallback: &[u8],
 ) -> io::Result<ProvisionResult> {
     let start = Instant::now();
-    let mode = detect_payload_mode(config);
+    let detected_mode = detect_payload_mode(config);
 
     // If runtime directory already exists and contains moodle root, skip extraction
     let moodle_dir = config.runtime_dir.join("moodle");
     if moodle_dir.exists() && config.runtime_dir.exists() {
         let placeholder = ensure_placeholder_file(
             &config.runtime_dir,
-            mode,
+            detected_mode,
             "existing-runtime",
         )?;
         return Ok(ProvisionResult {
-            mode,
+            mode: detected_mode,
             extracted_files: 0,
             placeholder_path: placeholder,
             prune_report: None,
@@ -209,26 +218,25 @@ pub fn provision_payload(
         });
     }
 
-    let (extracted_count, source_label) = match mode {
-        PayloadMode::Online => {
-            // In online mode, unpack the embedded or downloaded package
-            let count = unpack_payload_buffer_to_dir(embedded_fallback, &config.runtime_dir)?;
-            (count, "online-download-package".to_string())
-        }
-        PayloadMode::Offline => {
-            // Check for offline payload archive on disk (.pak preferred, or .zip)
-            if let Some(offline_archive) = resolve_offline_payload_path(config) {
-                let payload_bytes = fs::read(&offline_archive)?;
-                let count = unpack_payload_buffer_to_dir(&payload_bytes, &config.runtime_dir)?;
-                let label = offline_archive
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("offline_payload")
-                    .to_string();
-                (count, label)
-            } else {
+    // Always prefer local offline payload archive on disk (.pak or .zip) if present
+    let (extracted_count, source_label, mode) = if let Some(offline_archive) = resolve_offline_payload_path(config) {
+        let payload_bytes = fs::read(&offline_archive)?;
+        let count = unpack_payload_buffer_to_dir(&payload_bytes, &config.runtime_dir)?;
+        let label = offline_archive
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("payload.pak")
+            .to_string();
+        (count, label, PayloadMode::Offline)
+    } else {
+        match detected_mode {
+            PayloadMode::Online => {
                 let count = unpack_payload_buffer_to_dir(embedded_fallback, &config.runtime_dir)?;
-                (count, "embedded-offline-payload".to_string())
+                (count, "online-download-package".to_string(), PayloadMode::Online)
+            }
+            PayloadMode::Offline => {
+                let count = unpack_payload_buffer_to_dir(embedded_fallback, &config.runtime_dir)?;
+                (count, "embedded-offline-payload".to_string(), PayloadMode::Offline)
             }
         }
     };

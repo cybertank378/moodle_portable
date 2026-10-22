@@ -12,7 +12,7 @@ fn print_help() {
     println!("  aksaventra_installer.exe [OPTIONS]");
     println!();
     println!("Options:");
-    println!("  -d, --install-dir <PATH>              Custom directory to install/extract runtime (default: ./runtime)");
+    println!("  -d, --install-dir <PATH>              Custom directory to install/extract runtime (default: current directory)");
     println!("  -t, --target <PATH>                   Alias for --install-dir");
     println!("      --pack-container <ZIP> <PAK>      Pack a .zip archive into an encrypted .pak container");
     println!("      --verify-container <PAK>          Verify integrity of an encrypted .pak container");

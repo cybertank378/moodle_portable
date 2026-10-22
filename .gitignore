@@ -5,3 +5,5 @@
 /scratch
 *.pak
 /.temp_*
+*.log
+mariadb-install-log.txt

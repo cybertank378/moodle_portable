@@ -136,7 +136,7 @@ impl Default for ProgressTracker {
 
 // --- CUSTOM INSTALLATION DIRECTORY RESOLUTION ---
 
-pub const DEFAULT_RUNTIME_DIR: &str = "./runtime";
+pub const DEFAULT_RUNTIME_DIR: &str = ".";
 pub const ENV_INSTALL_DIR: &str = "AKSAVENTRA_INSTALL_DIR";
 pub const FALLBACK_ENV_INSTALL_DIR: &str = "MOODLE_INSTALL_DIR";
 
