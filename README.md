@@ -14,7 +14,7 @@ Seluruh tumpukan server (**Nginx**, **PHP 8.2**, **MariaDB**, dan **Moodle Core*
 ## 📋 Daftar Isi
 1. [Panduan Pengguna Akhir (End-User Quick Start)](#-panduan-pengguna-akhir-end-user-quick-start)
    - [Langkah 1: Unduh Paket Rilis](#langkah-1-unduh-paket-rilis)
-   - [Langkah 2: Ekstrak Berkas Zip](#langkah-2-ekstrak-berkas-zip)
+   - [Langkah 2: Persiapan Berkas Aplikasi](#langkah-2-persiapan-berkas-aplikasi)
    - [Langkah 3: Jalankan `moodle_installer.exe`](#langkah-3-jalankan-moodle_installerexe)
    - [Langkah 4: Akses LMS Melalui Browser](#langkah-4-akses-lms-melalui-browser)
    - [Langkah 5: Cara Menutup Aplikasi dengan Aman](#langkah-5-cara-menutup-aplikasi-dengan-aman)
@@ -46,16 +46,27 @@ Pilih dan unduh berkas arsip zip:
 
 ---
 
-### Langkah 2: Ekstrak Berkas Zip
-1. Klik kanan pada berkas `moodle-portable-v0.2.0-beta.1-windows-x64.zip` yang telah diunduh.
-2. Pilih **Extract All...** (Ekstrak Semua).
-3. Tentukan lokasi folder tujuan (misal: di `D:\MoodlePortable`, Desktop, atau langsung di flashdisk eksternal).
-4. Klik **Extract**.
+### Langkah 2: Persiapan Berkas Aplikasi
+Pastikan berkas aplikasi berada di dalam satu folder yang sama:
+
+- **Jika Anda mengunduh berkas `.zip`**:
+  1. Klik kanan pada berkas `moodle-portable-v0.2.0-beta.1-windows-x64.zip`.
+  2. Pilih **Extract All...** (Ekstrak Semua), lalu tentukan lokasi folder (misal: `D:\MoodlePortable` atau langsung di flashdisk).
+  3. Klik **Extract**.
+  4. Masuk ke dalam folder hasil ekstraksi. Anda akan melihat 2 berkas utama:
+     - 🚀 **`moodle_installer.exe`** (aplikasi peluncur)
+     - 📦 **`payload.pak`** (paket sistem LMS portabel)
+
+- **Jika Anda mengunduh berkas secara terpisah**:
+  - Cukup buat satu folder baru (misal: `MoodlePortable`), lalu letakkan berkas **`moodle_installer.exe`** dan **`payload.pak`** di dalam folder tersebut secara berdampingan.
+
+> [!WARNING]
+> **Penting**: Berkas `payload.pak` **JANGAN dibuka, diubah, atau diekstrak secara manual**. Berkas tersebut telah dienkripsi khusus dan akan dibaca serta dipasang secara otomatis oleh `moodle_installer.exe`.
 
 ---
 
 ### Langkah 3: Jalankan `moodle_installer.exe`
-1. Buka folder hasil ekstraksi.
+1. Buka folder yang berisi `moodle_installer.exe` dan `payload.pak`.
 2. Klik dua kali pada file **`moodle_installer.exe`**.
 3. Jendela konsol akan muncul dan menampilkan visual *progress bar* kemajuan inisialisasi:
 
@@ -266,7 +277,7 @@ cd moodle_installer
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build_payload.ps1
 ```
-Skrip ini akan mengunduh paket resmi WNMP, menyusun konfigurasi `php.ini`, melakukan pre-inisialisasi MariaDB sistem, memvalidasi 24 titik kelengkapan modul, dan mengemasnya ke dalam wadah terenkripsi `payload.pak` (209.1 MB).
+Skrip ini akan mengunduh paket resmi WNMP, menyusun konfigurasi `php.ini`, mengemas dependency resmi MariaDB MSI (`mariadb-13.0.2-winx64.msi`), memvalidasi 21 titik kelengkapan modul dan berkas, serta mengemasnya ke dalam wadah biner terenkripsi `payload.pak` (192.6 MB).
 
 ### 3. Kompilasi Executable Rust
 ```powershell
