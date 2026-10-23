@@ -4,6 +4,13 @@
 /staging_payload
 /scratch
 *.pak
+payload.zip
 /.temp_*
 *.log
 mariadb-install-log.txt
+/mariadb
+/moodle
+/moodledata
+/nginx
+/php
+placeholder.txt

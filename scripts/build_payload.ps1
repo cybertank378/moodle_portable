@@ -65,8 +65,8 @@ $Downloads = @{
         MinSize = 1MB
     }
     "mariadb" = @{
-        Url     = "https://downloads.mariadb.org/rest-api/mariadb/13.0.2/mariadb-13.0.2-winx64.msi"
-        File    = Join-Path $CachePath "mariadb-13.0.2-winx64.msi"
+        Url     = "https://linux.domainesia.com/mariadb///mariadb-13.0.2/winx64-packages/mariadb-13.0.2-winx64.zip"
+        File    = Join-Path $CachePath "mariadb-13.0.2-winx64.zip"
         MinSize = 50MB
     }
 }
@@ -233,12 +233,18 @@ opcache.fast_shutdown = 1
 Set-Content -Path (Join-Path $PhpStaging "php.ini") -Value $phpIniContent -Encoding utf8
 Write-Host "     PHP 8.2 configured with Aksaventra requirements." -ForegroundColor Green
 
-# 3.3 MariaDB 13.0.2 x64 MSI Dependency
-Write-Host "  -> Packing MariaDB 13.0.2 x64 MSI Dependency..." -ForegroundColor White
-New-Item -ItemType Directory -Path $MariaDbStaging -Force | Out-Null
-$targetMsi = Join-Path $MariaDbStaging "mariadb-13.0.2-winx64.msi"
-Copy-Item -Path $Downloads["mariadb"].File -Destination $targetMsi -Force
-Write-Host "     MariaDB MSI dependency packed (not installed): $targetMsi" -ForegroundColor Green
+# 3.3 MariaDB 13.0.2 x64 ZIP Extraction
+Write-Host "  -> Extracting MariaDB 13.0.2 x64 ZIP..." -ForegroundColor White
+$tempMaria = Join-Path $ProjectRoot ".temp_mariadb_extract"
+if (Test-Path $tempMaria) {
+    cmd.exe /c "rmdir /s /q `"$tempMaria`"" 2>$null
+    Remove-Item -Path $tempMaria -Recurse -Force -ErrorAction SilentlyContinue
+}
+Expand-Archive -Path $Downloads["mariadb"].File -DestinationPath $tempMaria -Force
+$mariaFolder = Get-ChildItem -Path $tempMaria -Directory | Select-Object -First 1
+Move-Item -Path $mariaFolder.FullName -Destination $MariaDbStaging -Force
+cmd.exe /c "rmdir /s /q `"$tempMaria`"" 2>$null
+Write-Host "     MariaDB portable runtime extracted to: $MariaDbStaging" -ForegroundColor Green
 
 # 3.4 Aksaventra Core System 5.0.11
 Write-Host "  -> Extracting Aksaventra Core System 5.0.11..." -ForegroundColor White
@@ -293,7 +299,9 @@ $RequiredItems = @(
     @{ Path = Join-Path $NginxStaging "nginx.exe"; Label = "Nginx Web Server Binary (nginx.exe)" },
     @{ Path = Join-Path $NginxStaging "conf\mime.types"; Label = "Nginx MIME Types Configuration" },
     @{ Path = Join-Path $NginxStaging "conf\fastcgi_params"; Label = "Nginx FastCGI Parameters" },
-    @{ Path = Join-Path $MariaDbStaging "mariadb-13.0.2-winx64.msi"; Label = "MariaDB MSI Installer Dependency (mariadb-13.0.2-winx64.msi)" },
+    @{ Path = Join-Path $MariaDbStaging "bin\mariadbd.exe"; Label = "MariaDB Server Binary (bin\mariadbd.exe)" },
+    @{ Path = Join-Path $MariaDbStaging "bin\mysql.exe"; Label = "MariaDB Client Binary (bin\mysql.exe)" },
+    @{ Path = Join-Path $MariaDbStaging "bin\mysql_install_db.exe"; Label = "MariaDB Database Initialization Binary (bin\mysql_install_db.exe)" },
     @{ Path = Join-Path $MoodledataStaging ".gitkeep"; Label = "Aksaventra Data Directory" }
 )
 
@@ -316,12 +324,12 @@ if ($MissingCount -gt 0) {
     throw "Package verification failed: $MissingCount critical components are missing from staging! Cannot build container."
 }
 
-# Explicitly assert MariaDB is NOT pre-installed in the payload staging
+# Explicitly assert MariaDB is clean without pre-existing runtime data directory
 $mariaMysqlDb = Join-Path $MariaDbStaging "data"
 if (Test-Path $mariaMysqlDb) {
-    throw "Integrity error: MariaDB data directory ($mariaMysqlDb) exists in staging! MariaDB must only be packed clean as an MSI dependency."
+    throw "Integrity error: MariaDB data directory ($mariaMysqlDb) exists in staging! Database data must be initialized fresh on target machine."
 }
-Write-Host "  [OK] MariaDB verified clean-packed as MSI dependency (uninstalled, ready for installation on user machine)" -ForegroundColor Green
+Write-Host "  [OK] MariaDB portable runtime verified clean (no runtime data, ready for target initialization)" -ForegroundColor Green
 Write-Host "  All required packages and components verified 100% complete!" -ForegroundColor Green
 
 # --- 5. COMPRESS INTO PAYLOAD.ZIP ---

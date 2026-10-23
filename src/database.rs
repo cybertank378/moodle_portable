@@ -21,7 +21,7 @@ pub struct MariaDbPaths {
     pub server_exe: PathBuf,
     pub client_exe: PathBuf,
     pub installer_exe: PathBuf,
-    pub msi_installer: PathBuf,
+    pub zip_archive: Option<PathBuf>,
 }
 
 impl MariaDbPaths {
@@ -58,13 +58,13 @@ impl MariaDbPaths {
             bin_dir.join("mysql_install_db.exe")
         };
 
-        let msi_installer = {
-            let find_msi_in = |dir: &Path| -> Option<PathBuf> {
+        let zip_archive = {
+            let find_zip_in = |dir: &Path| -> Option<PathBuf> {
                 if let Ok(entries) = fs::read_dir(dir) {
                     for entry in entries.flatten() {
                         let path = entry.path();
                         if path.is_file()
-                            && path.extension().map_or(false, |ext| ext.eq_ignore_ascii_case("msi"))
+                            && path.extension().map_or(false, |ext| ext.eq_ignore_ascii_case("zip"))
                             && path.to_string_lossy().to_ascii_lowercase().contains("mariadb")
                         {
                             return Some(path);
@@ -74,9 +74,14 @@ impl MariaDbPaths {
                 None
             };
 
-            find_msi_in(&base_dir)
-                .or_else(|| base_dir.parent().and_then(find_msi_in))
-                .unwrap_or_else(|| base_dir.join("mariadb-11.4.2-winx64.msi"))
+            find_zip_in(&base_dir)
+                .or_else(|| base_dir.parent().and_then(find_zip_in))
+                .or_else(|| {
+                    std::env::current_exe()
+                        .ok()
+                        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                        .and_then(|d| find_zip_in(&d))
+                })
         };
 
         Self {
@@ -87,7 +92,7 @@ impl MariaDbPaths {
             server_exe,
             client_exe,
             installer_exe,
-            msi_installer,
+            zip_archive,
         }
     }
 
@@ -98,58 +103,32 @@ impl MariaDbPaths {
 
     /// Constructs the `Command` to run the MariaDB database installer/initialization.
     pub fn build_installer_command(&self) -> Command {
-        let mut cmd = create_silent_command(&self.installer_exe);
-        let datadir_arg = format!("--datadir={}", self.data_dir.to_string_lossy().replace('\\', "/"));
-        cmd.args([&datadir_arg, "--default-storage-engine=InnoDB"]);
-        cmd.current_dir(&self.base_dir);
-        cmd
-    }
-
-    /// Constructs the `Command` to execute the MariaDB MSI installer package with logging.
-    pub fn build_msi_install_command(&self) -> Command {
-        let abs_msi = if self.msi_installer.is_absolute() {
-            self.msi_installer.clone()
+        let abs_base = if self.base_dir.is_absolute() {
+            self.base_dir.clone()
         } else {
             std::env::current_dir()
                 .unwrap_or_default()
-                .join(&self.msi_installer)
+                .join(&self.base_dir)
         };
-        let log_path = self.base_dir.join("mariadb-install-log.txt");
-
-        let mut cmd = Command::new("msiexec.exe");
-        cmd.args([
-            "/i",
-            &abs_msi.to_string_lossy(),
-            "/l*v",
-            &log_path.to_string_lossy(),
-        ]);
-        cmd
-    }
-
-    /// Constructs the `Command` to execute the MariaDB MSI installer package targeted to a specific directory.
-    pub fn build_msi_install_command_with_target(&self, target_dir: &Path) -> Command {
-        let abs_msi = if self.msi_installer.is_absolute() {
-            self.msi_installer.clone()
+        let abs_installer = if self.installer_exe.is_absolute() {
+            self.installer_exe.clone()
         } else {
             std::env::current_dir()
                 .unwrap_or_default()
-                .join(&self.msi_installer)
+                .join(&self.installer_exe)
         };
-        let abs_target = if target_dir.is_absolute() {
-            target_dir.to_path_buf()
+        let abs_data = if self.data_dir.is_absolute() {
+            self.data_dir.clone()
         } else {
             std::env::current_dir()
                 .unwrap_or_default()
-                .join(target_dir)
+                .join(&self.data_dir)
         };
 
-        let mut cmd = Command::new("msiexec.exe");
-        cmd.args([
-            "/a",
-            &abs_msi.to_string_lossy(),
-            "/qn",
-            &format!("TARGETDIR={}", abs_target.to_string_lossy()),
-        ]);
+        let mut cmd = create_silent_command(&abs_installer);
+        let datadir_arg = format!("--datadir={}", abs_data.to_string_lossy().replace('\\', "/"));
+        cmd.args([&datadir_arg, "--silent"]);
+        cmd.current_dir(&abs_base);
         cmd
     }
 
@@ -159,8 +138,25 @@ impl MariaDbPaths {
             return Ok(());
         }
 
-        // 1. If MSI installer dependency exists, execute silent portable MSI administrative extraction
-        if self.msi_installer.exists() {
+        // 1. If MariaDB binaries are absent but a ZIP archive exists, extract it
+        if !self.server_exe.exists() && !self.installer_exe.exists() {
+            if let Some(ref zip_path) = self.zip_archive {
+                extract_mariadb_zip(zip_path, &self.base_dir)?;
+            }
+        }
+
+        // 2. Resolve installer binary (mysql_install_db.exe or mariadb-install-db.exe)
+        let installer_bin = if self.installer_exe.exists() {
+            self.installer_exe.clone()
+        } else if self.base_dir.join("bin").join("mysql_install_db.exe").exists() {
+            self.base_dir.join("bin").join("mysql_install_db.exe")
+        } else if self.base_dir.join("bin").join("mariadb-install-db.exe").exists() {
+            self.base_dir.join("bin").join("mariadb-install-db.exe")
+        } else {
+            PathBuf::new()
+        };
+
+        if installer_bin.exists() && !self.is_data_initialized() {
             let abs_base = if self.base_dir.is_absolute() {
                 self.base_dir.clone()
             } else {
@@ -168,67 +164,111 @@ impl MariaDbPaths {
                     .unwrap_or_default()
                     .join(&self.base_dir)
             };
+            let abs_installer = if installer_bin.is_absolute() {
+                installer_bin.clone()
+            } else {
+                std::env::current_dir()
+                    .unwrap_or_default()
+                    .join(&installer_bin)
+            };
+            let abs_data = if self.data_dir.is_absolute() {
+                self.data_dir.clone()
+            } else {
+                std::env::current_dir()
+                    .unwrap_or_default()
+                    .join(&self.data_dir)
+            };
 
-            let extract_target = abs_base.join("extracted_msi");
-            if extract_target.exists() {
-                let _ = fs::remove_dir_all(&extract_target);
+            if let Some(parent) = abs_data.parent() {
+                fs::create_dir_all(parent)?;
             }
-            fs::create_dir_all(&extract_target)?;
+            fs::create_dir_all(&abs_data)?;
 
-            let mut cmd = self.build_msi_install_command_with_target(&extract_target);
+            let mut cmd = create_silent_command(&abs_installer);
+            let datadir_arg = format!("--datadir={}", abs_data.to_string_lossy().replace('\\', "/"));
+            cmd.args([&datadir_arg, "--silent"]);
             cmd.current_dir(&abs_base);
             let status = run_silent_status(&mut cmd)?;
             if !status.success() {
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
-                    format!("MariaDB MSI administrative unpack failed with exit code: {:?}", status.code()),
+                    format!("MariaDB database initialization failed with exit code: {:?}", status.code()),
                 ));
             }
-
-            // Move extracted contents (e.g. "MariaDB 13.0") into base_dir
-            if let Ok(entries) = fs::read_dir(&extract_target) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_dir() && (path.join("bin").exists() || path.to_string_lossy().contains("MariaDB")) {
-                        if let Ok(sub_entries) = fs::read_dir(&path) {
-                            for sub in sub_entries.flatten() {
-                                let dest = abs_base.join(sub.file_name());
-                                if !dest.exists() {
-                                    let _ = fs::rename(sub.path(), &dest);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            let _ = fs::remove_dir_all(&extract_target);
-        }
-
-        // 2. If standalone mysql_install_db binary exists, execute binary initialization
-        let installer_bin = if self.installer_exe.exists() {
-            self.installer_exe.clone()
-        } else if self.base_dir.join("bin").join("mysql_install_db.exe").exists() {
-            self.base_dir.join("bin").join("mysql_install_db.exe")
-        } else {
-            PathBuf::new()
-        };
-
-        if installer_bin.exists() && !self.is_data_initialized() {
-            if let Some(parent) = self.data_dir.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::create_dir_all(&self.data_dir)?;
-
-            let mut cmd = create_silent_command(&installer_bin);
-            let datadir_arg = format!("--datadir={}", self.data_dir.to_string_lossy().replace('\\', "/"));
-            cmd.args([&datadir_arg, "--default-storage-engine=InnoDB"]);
-            cmd.current_dir(&self.base_dir);
-            let _ = run_silent_status(&mut cmd);
         }
 
         Ok(())
     }
+}
+
+/// Extracts a MariaDB portable ZIP package into target directory, flattening any outer container folder.
+pub fn extract_mariadb_zip(zip_path: &Path, target_dir: &Path) -> io::Result<usize> {
+    if !target_dir.exists() {
+        fs::create_dir_all(target_dir)?;
+    }
+
+    let file = fs::File::open(zip_path)?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Invalid MariaDB ZIP archive: {e}")))?;
+
+    // Detect if archive entries share a top-level directory like "mariadb-13.0.2-winx64/"
+    let prefix_to_strip = if archive.len() > 0 {
+        archive.by_index(0).ok().and_then(|entry| {
+            entry.enclosed_name().and_then(|p| {
+                let mut comps = p.components();
+                if let Some(std::path::Component::Normal(c)) = comps.next() {
+                    let s = c.to_string_lossy();
+                    if s.to_ascii_lowercase().contains("mariadb") {
+                        return Some(s.to_string());
+                    }
+                }
+                None
+            })
+        })
+    } else {
+        None
+    };
+
+    let mut count = 0;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Failed reading entry {i}: {e}")))?;
+
+        let raw_path = match entry.enclosed_name() {
+            Some(p) => p.to_path_buf(),
+            None => continue,
+        };
+
+        let rel_path = if let Some(ref prefix) = prefix_to_strip {
+            if let Ok(stripped) = raw_path.strip_prefix(prefix) {
+                stripped.to_path_buf()
+            } else {
+                raw_path
+            }
+        } else {
+            raw_path
+        };
+
+        if rel_path.as_os_str().is_empty() {
+            continue;
+        }
+
+        let outpath = target_dir.join(rel_path);
+        if entry.is_dir() {
+            fs::create_dir_all(&outpath)?;
+        } else {
+            if let Some(parent) = outpath.parent() {
+                if !parent.exists() {
+                    fs::create_dir_all(parent)?;
+                }
+            }
+            let mut outfile = fs::File::create(&outpath)?;
+            io::copy(&mut entry, &mut outfile)?;
+            count += 1;
+        }
+    }
+
+    Ok(count)
 }
 
 /// Generates a lightweight, memory-efficient `my.ini` for MariaDB (NFR-02 compliance).
@@ -432,14 +472,7 @@ mod tests {
         let cmd = paths.build_installer_command();
         let debug_cmd = format!("{:?}", cmd);
         assert!(debug_cmd.contains("--datadir="));
-        assert!(debug_cmd.contains("--default-storage-engine=InnoDB"));
-
-        let msi_cmd = paths.build_msi_install_command();
-        let debug_msi = format!("{:?}", msi_cmd);
-        assert!(debug_msi.contains("msiexec.exe"));
-        assert!(debug_msi.contains("/i"));
-        assert!(debug_msi.contains("/l*v"));
-        assert!(debug_msi.contains("mariadb-install-log.txt"));
+        assert!(debug_cmd.contains("--silent"));
 
         // Simulate initialization
         fs::create_dir_all(paths.data_dir.join("mysql")).unwrap();
