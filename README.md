@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20x64-blue.svg)]()
-[![Release](https://img.shields.io/badge/Release-v0.2.0--beta.1-brightgreen.svg)](https://github.com/cybertank378/moodle_portable/releases/tag/v0.2.0-beta.1)
+[![Release](https://img.shields.io/badge/Release-v0.2.0-brightgreen.svg)](https://github.com/cybertank378/moodle_portable/releases/tag/v0.2.0)
 [![License](https://img.shields.io/badge/License-GPL--3.0-lightgrey.svg)]()
 
 **Aksaventra Portable** adalah aplikasi Learning Management System (LMS) portabel berbasis web yang dirancang agar dapat langsung berjalan secara portabel pada Microsoft Windows (64-bit). 
@@ -36,10 +36,10 @@ Panduan ini ditujukan bagi guru, pengajar, proktor ujian, administrator sekolah,
 
 ### Langkah 1: Unduh Paket Rilis
 Kunjungi halaman rilis resmi kami di GitHub:
-👉 **[Unduh Aksaventra Portable v0.2.0-beta.1](https://github.com/cybertank378/moodle_portable/releases/tag/v0.2.0-beta.1)**
+👉 **[Unduh Aksaventra Portable v0.2.0](https://github.com/cybertank378/moodle_portable/releases/tag/v0.2.0)**
 
 Pilih dan unduh berkas arsip zip:
-- **`aksaventra-portable-v0.2.0-beta.1-windows-x64.zip`** (berisi launcher biner, wadah terenkripsi `payload.pak`, dan dokumentasi).
+- **`aksaventra-portable-v0.2.0-windows-x64.zip`** (berisi launcher biner, wadah terenkripsi `payload.pak`, dan dokumentasi).
 
 > [!TIP]
 > Anda juga dapat mengunduh berkas `aksaventra_installer.exe` dan `payload.pak` secara terpisah, asalkan keduanya disimpan dalam folder yang sama.
@@ -50,7 +50,7 @@ Pilih dan unduh berkas arsip zip:
 Pastikan berkas aplikasi berada di dalam satu folder yang sama:
 
 - **Jika Anda mengunduh berkas `.zip`**:
-  1. Klik kanan pada berkas `aksaventra-portable-v0.2.0-beta.1-windows-x64.zip`.
+  1. Klik kanan pada berkas `aksaventra-portable-v0.2.0-windows-x64.zip`.
   2. Pilih **Extract All...** (Ekstrak Semua), lalu tentukan lokasi folder (misal: `D:\AksaventraPortable` atau langsung di flashdisk).
   3. Klik **Extract**.
   4. Masuk ke dalam folder hasil ekstraksi. Anda akan melihat berkas utama:
