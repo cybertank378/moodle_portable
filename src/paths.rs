@@ -74,35 +74,94 @@ impl PortablePaths {
             fs::write(&php_ini_path, php_ini)?;
         }
 
-        // 3. Patch Nginx (conf/nginx.conf)
-        let nginx_conf_path = self.nginx_dir.join("conf").join("nginx.conf");
+        // 3. Patch Nginx (conf/nginx.conf & conf/sites-enabled/moodle.conf)
+        let nginx_posix = Self::to_posix_path(&self.nginx_dir);
+        let conf_dir = self.nginx_dir.join("conf");
+        let sites_enabled_dir = conf_dir.join("sites-enabled");
+        let logs_dir = self.nginx_dir.join("logs");
+        let temp_dir = self.nginx_dir.join("temp");
+
+        fs::create_dir_all(&conf_dir)?;
+        fs::create_dir_all(&sites_enabled_dir)?;
+        fs::create_dir_all(&logs_dir)?;
+        fs::create_dir_all(&temp_dir)?;
+
+        // 3a. Tulis virtual host Moodle di sites-enabled/moodle.conf secara dinamis
+        let moodle_vhost_path = sites_enabled_dir.join("moodle.conf");
+        let moodle_vhost = format!(
+            "server {{\n\
+                listen 127.0.0.1:{port};\n\
+                server_name localhost 127.0.0.1;\n\
+                root \"{moodle_posix}\";\n\
+                index index.php index.html index.htm;\n\
+                \n\
+                location ~ /\\. {{\n\
+                    deny all;\n\
+                    return 403;\n\
+                }}\n\
+                \n\
+                location ~* \\.(env|git|lock|yml|yaml|bak|config|sql)$ {{\n\
+                    deny all;\n\
+                    return 403;\n\
+                }}\n\
+                \n\
+                location ~* /(moodledata|temp|cache)/ {{\n\
+                    deny all;\n\
+                    return 404;\n\
+                }}\n\
+                \n\
+                location / {{\n\
+                    try_files $uri $uri/ /index.php$is_args$args;\n\
+                }}\n\
+                \n\
+                location ~ [^/]+\\.php(/|$) {{\n\
+                    fastcgi_split_path_info ^(.+\\.php)(/.+)$;\n\
+                    fastcgi_pass 127.0.0.1:9000;\n\
+                    fastcgi_index index.php;\n\
+                    include fastcgi_params;\n\
+                    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n\
+                    fastcgi_param PATH_INFO $fastcgi_path_info;\n\
+                    fastcgi_read_timeout 300s;\n\
+                    fastcgi_send_timeout 300s;\n\
+                }}\n\
+            }}\n"
+        );
+        fs::write(&moodle_vhost_path, moodle_vhost)?;
+
+        // 3b. Tulis konfigurasi utama Nginx dengan memanggil include sites-enabled/*.conf secara dinamis
+        let nginx_conf_path = conf_dir.join("nginx.conf");
         let nginx_conf = format!(
-            "worker_processes auto;\n\
-            events {{ worker_connections 1024; }}\n\
+            "worker_processes 1;\n\
+            error_log logs/error.log warn;\n\
+            pid logs/nginx.pid;\n\
+            \n\
+            events {{\n\
+                worker_connections 1024;\n\
+            }}\n\
+            \n\
             http {{\n\
                 include mime.types;\n\
                 default_type application/octet-stream;\n\
+                \n\
+                charset utf-8;\n\
+                server_tokens off;\n\
                 sendfile on;\n\
+                tcp_nopush on;\n\
+                tcp_nodelay on;\n\
                 keepalive_timeout 65;\n\
                 client_max_body_size 512M;\n\
-                server {{\n\
-                    listen 127.0.0.1:{port};\n\
-                    server_name localhost;\n\
-                    root \"{moodle_posix}\";\n\
-                    index index.php index.html;\n\
-                    location / {{\n\
-                        try_files $uri $uri/ /index.php?$query_string;\n\
-                    }}\n\
-                    location ~ [^/]+\\.php(/|$) {{\n\
-                        fastcgi_split_path_info ^(.+\\.php)(/.+)$;\n\
-                        fastcgi_pass 127.0.0.1:9000;\n\
-                        fastcgi_index index.php;\n\
-                        include fastcgi_params;\n\
-                        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n\
-                        fastcgi_param PATH_INFO $fastcgi_path_info;\n\
-                        fastcgi_read_timeout 300;\n\
-                    }}\n\
-                }}\n\
+                client_body_buffer_size 128k;\n\
+                \n\
+                fastcgi_connect_timeout 60s;\n\
+                fastcgi_send_timeout 300s;\n\
+                fastcgi_read_timeout 300s;\n\
+                fastcgi_buffers 16 16k;\n\
+                fastcgi_buffer_size 32k;\n\
+                \n\
+                # ============================================================\n\
+                # LOAD VIRTUAL HOSTS (DINAMIS PORTABEL)\n\
+                # ============================================================\n\
+                include \"{nginx_posix}/conf/sites-enabled/*.conf\";\n\
             }}\n"
         );
         fs::write(&nginx_conf_path, nginx_conf)?;
