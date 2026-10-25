@@ -15,6 +15,6 @@ Mengembangkan modul verifikasi serial key ke server `aksaventra.ai.id` berbasis 
     "serial_key": "XXXX-YYYY-ZZZZ",
     "hwid": "MACHINE-UID-STRING"
   }
-
-- [ ] Menurunkan kunci enkripsi master 256-bit ([u8; 32]) menggunakan SHA-256 berdasarkan seed dari server dan internal salt.
-[ ] Menghentikan eksekusi program (Err) dan menghapus file serial_key.lic jika verifikasi gagal atau ditolak oleh server.
+  ```
+- [ ] Menurunkan kunci enkripsi master 256-bit (`[u8; 32]`) menggunakan SHA-256 berdasarkan seed dari server dan internal salt.
+- [ ] Menghentikan eksekusi program (`Err`) dan menghapus file `serial_key.lic` jika verifikasi gagal atau ditolak oleh server.
