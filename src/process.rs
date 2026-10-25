@@ -1,7 +1,9 @@
 use crate::network::wait_for_port;
 use crate::paths::PortablePaths;
 use anyhow::{anyhow, Context, Result};
+use std::fs;
 use std::os::windows::process::CommandExt;
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
@@ -24,6 +26,83 @@ impl ServiceOrchestrator {
         }
     }
 
+    /// Menginisialisasi sistem database MariaDB jika direktori mysql belum ada
+    pub fn ensure_mariadb_initialized(mariadb_dir: &Path) -> Result<()> {
+        let data_dir = mariadb_dir.join("data");
+        let mysql_dir = data_dir.join("mysql");
+
+        if mysql_dir.exists() {
+            return Ok(());
+        }
+
+        println!("[ENGINE] Data MariaDB belum diinisialisasi. Menjalankan inisialisasi awal database...");
+        fs::create_dir_all(&data_dir)?;
+
+        let install_db_exe = mariadb_dir.join("bin").join("mariadb-install-db.exe");
+        let fallback_exe = mariadb_dir.join("bin").join("mysql_install_db.exe");
+        let installer = if install_db_exe.exists() {
+            install_db_exe
+        } else if fallback_exe.exists() {
+            fallback_exe
+        } else {
+            return Ok(());
+        };
+
+        let my_ini = data_dir.join("my.ini");
+        let temp_ini = mariadb_dir.join("temp_my.ini");
+        let had_ini = my_ini.exists();
+        if had_ini {
+            let _ = fs::rename(&my_ini, &temp_ini);
+        }
+
+        let status = Command::new(&installer)
+            .arg(format!("--datadir={}", data_dir.display()))
+            .current_dir(mariadb_dir)
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+
+        if had_ini {
+            let _ = fs::rename(&temp_ini, &my_ini);
+        }
+
+        if let Ok(st) = status {
+            if st.success() {
+                println!("  [OK] Inisialisasi awal database MariaDB berhasil.");
+            } else {
+                eprintln!("  [WARN] Inisialisasi MariaDB keluar dengan status: {:?}", st.code());
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Memastikan database moodle telah dibuat dengan collation utf8mb4_unicode_ci
+    pub fn ensure_moodle_database(mariadb_dir: &Path, port: u16) -> Result<()> {
+        let mysql_bin = mariadb_dir.join("bin").join("mysql.exe");
+        if mysql_bin.exists() {
+            let status = Command::new(&mysql_bin)
+                .args([
+                    "-u",
+                    "root",
+                    "-P",
+                    &port.to_string(),
+                    "-h",
+                    "127.0.0.1",
+                    "-e",
+                    "CREATE DATABASE IF NOT EXISTS moodle DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;",
+                ])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+
+            if let Ok(st) = status {
+                if st.success() {
+                    println!("  [OK] Database 'moodle' (utf8mb4_unicode_ci) terverifikasi & siap.");
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Menjalankan MariaDB, PHP-CGI, dan Nginx secara berurutan dan headless
     pub fn start_all(&mut self, paths: &PortablePaths, app_port: u16) -> Result<()> {
         // 1. Jalankan MariaDB Server
@@ -34,6 +113,8 @@ impl ServiceOrchestrator {
         if !mysqld_bin.exists() {
             return Err(anyhow!("Binary mysqld.exe tidak ditemukan di {:?}", mysqld_bin));
         }
+
+        Self::ensure_mariadb_initialized(&paths.mariadb_dir)?;
 
         self.mariadb_proc = Some(
             Command::new(&mysqld_bin)
@@ -52,6 +133,9 @@ impl ServiceOrchestrator {
             return Err(anyhow!("MariaDB tidak merespon pada port {}. Pastikan tidak ada konflik database lain.", DB_PORT));
         }
         println!("  [OK] MariaDB Database Server siap menerima koneksi.");
+
+        // Pastikan database moodle otomatis dibuat
+        Self::ensure_moodle_database(&paths.mariadb_dir, DB_PORT)?;
 
         // 2. Jalankan PHP FastCGI
         println!("[ENGINE] Menyalakan PHP FastCGI (Port {})...", PHP_PORT);

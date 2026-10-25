@@ -13,6 +13,9 @@ pub const SECRET_SALT: &str = "AKSAVENTRA_PORTABLE_CORE_2026_SALT";
 pub const LICENSE_FILENAME: &str = "serial_key.lic";
 pub const LEGACY_LICENSE_FILENAME: &str = "aksaventra.lic";
 
+pub const DEMO_SERIAL_KEY: &str = "DEMO-AKSAVENTRA-2026";
+pub const DEMO_VAULT_SECRET: &str = "AKSAVENTRA_DEMO_SECRET_SEED_2026";
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct LicenseRequest {
     pub serial_key: String,
@@ -76,7 +79,13 @@ impl SecurityManager {
         machine_uid::get().unwrap_or_else(|_| "UNKNOWN-HWID-FALLBACK".to_string())
     }
 
-    /// Melakukan autentikasi lisensi ke server aksaventra.ai.id
+    /// Mengecek apakah serial key merupakan lisensi demo/trial
+    pub fn is_demo_license(serial_key: &str) -> bool {
+        let upper = serial_key.trim().to_uppercase();
+        upper.starts_with("DEMO") || upper.contains("DEMO") || upper == "TRIAL"
+    }
+
+    /// Melakukan autentikasi lisensi ke server aksaventra.ai.id atau validasi lisensi demo lokal
     pub async fn authenticate(base_dir: &Path) -> Result<Self> {
         let license_file = Self::resolve_license_path(base_dir);
         let hwid = Self::get_hardware_id();
@@ -84,17 +93,35 @@ impl SecurityManager {
         let serial_key = if license_file.exists() {
             let content = fs::read_to_string(&license_file)?.trim().to_string();
             if content.is_empty() {
-                Self::prompt_serial_key(&license_file)?
+                Self::prompt_or_demo_license(&license_file)?
             } else {
                 content
             }
         } else {
-            Self::prompt_serial_key(&license_file)?
+            Self::prompt_or_demo_license(&license_file)?
         };
 
         if serial_key.is_empty() {
             Self::purge_license_files(base_dir);
             return Err(anyhow!("Serial Key tidak boleh kosong."));
+        }
+
+        // 1. Dukungan Lisensi Demo / Trial (Bypass validasi remote untuk keperluan evaluasi/pengujian)
+        if Self::is_demo_license(&serial_key) {
+            println!("[AKSAVENTRA] =================================================");
+            println!("[AKSAVENTRA] Menggunakan Lisensi DEMO / TRIAL (Mode Evaluasi)");
+            println!("[AKSAVENTRA] Serial Key     : {}", serial_key);
+            println!("[AKSAVENTRA] HWID Perangkat : {}", hwid);
+            println!("[AKSAVENTRA] Status Lisensi : Aktif (Demo Terverifikasi)");
+            println!("[AKSAVENTRA] Terdaftar atas : Pengguna Demo Aksaventra");
+            println!("[AKSAVENTRA] =================================================");
+
+            let encryption_key = Self::derive_key(DEMO_VAULT_SECRET, SECRET_SALT);
+            return Ok(Self {
+                serial_key,
+                hwid,
+                encryption_key,
+            });
         }
 
         println!("[AKSAVENTRA] Memvalidasi lisensi ke aksaventra.ai.id...");
@@ -176,17 +203,27 @@ impl SecurityManager {
         })
     }
 
-    /// Meminta input Serial Key dari pengguna di terminal secara interaktif
-    fn prompt_serial_key(target_path: &Path) -> Result<String> {
-        print!("[AKSAVENTRA] Masukkan Serial Key Anda: ");
+    /// Meminta input Serial Key dari pengguna di terminal atau menggunakan demo license
+    pub fn prompt_or_demo_license(target_path: &Path) -> Result<String> {
+        print!("[AKSAVENTRA] Masukkan Serial Key Anda (tekan ENTER untuk Lisensi Demo): ");
         io::stdout().flush()?;
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
         let key = input.trim().to_string();
-        if !key.is_empty() {
-            fs::write(target_path, &key)?;
-        }
-        Ok(key)
+        let final_key = if key.is_empty() {
+            println!("[AKSAVENTRA] Membuat berkas lisensi demo otomatis ({})", DEMO_SERIAL_KEY);
+            DEMO_SERIAL_KEY.to_string()
+        } else {
+            key
+        };
+        fs::write(target_path, &final_key)?;
+        Ok(final_key)
+    }
+
+    /// Alias kompatibilitas ke prompt_or_demo_license
+    #[allow(dead_code)]
+    pub fn prompt_serial_key(target_path: &Path) -> Result<String> {
+        Self::prompt_or_demo_license(target_path)
     }
 }
 
@@ -247,6 +284,30 @@ mod tests {
 
         SecurityManager::purge_license_files(&temp_dir);
         assert!(!lic_file.exists(), "Berkas lisensi harus terhapus setelah purge");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_is_demo_license() {
+        assert!(SecurityManager::is_demo_license("DEMO-AKSAVENTRA-2026"));
+        assert!(SecurityManager::is_demo_license("demo-1234"));
+        assert!(SecurityManager::is_demo_license("AKSAVENTRA-DEMO"));
+        assert!(SecurityManager::is_demo_license("trial"));
+        assert!(!SecurityManager::is_demo_license("AKSA-PROD-9999"));
+    }
+
+    #[tokio::test]
+    async fn test_demo_license_authentication_offline() {
+        let temp_dir = std::env::temp_dir().join(format!("aksaventra_demo_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let lic_file = temp_dir.join(LICENSE_FILENAME);
+        fs::write(&lic_file, DEMO_SERIAL_KEY).unwrap();
+
+        let auth = SecurityManager::authenticate(&temp_dir).await.expect("Demo auth harus berhasil");
+        assert_eq!(auth.serial_key, DEMO_SERIAL_KEY);
+        assert_eq!(auth.encryption_key, SecurityManager::derive_key(DEMO_VAULT_SECRET, SECRET_SALT));
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

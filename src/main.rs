@@ -66,8 +66,17 @@ async fn main() -> Result<()> {
     }
     let app_port = network::find_available_port(preferred_port);
 
-    // 3. Dekripsi folder runtime dari aksaventra_vault.pak
-    VaultContainer::unseal_folders(&paths.vault_file, &paths.runtime_dir, &security.encryption_key)?;
+    // 3. Dekripsi folder runtime dari aksaventra_vault.pak jika ada
+    if paths.vault_file.exists() {
+        VaultContainer::unseal_folders(&paths.vault_file, &paths.runtime_dir, &security.encryption_key)?;
+    } else if paths.nginx_dir.exists() {
+        println!("[ENGINE] Menjalankan dalam mode folder langsung (Development / Demo Mode)...");
+    } else {
+        return Err(anyhow::anyhow!(
+            "Berkas brankas {:?} tidak ditemukan dan folder layanan tidak tersedia di direktori aplikasi.",
+            paths.vault_file.file_name().unwrap_or_default()
+        ));
+    }
 
     // 4. Re-konfigurasi path secara dinamis agar 100% portabel
     paths.patch_portable_configs(app_port)?;
@@ -104,9 +113,12 @@ async fn main() -> Result<()> {
 
     // 8. Matikan seluruh service & enkripsi kembali seluruh perubahan database/moodledata
     services.stop_all(&paths);
-    println!("[VAULT] Mengamankan dan mengenkripsi ulang data runtime...");
-    VaultContainer::seal_folders(&paths.runtime_dir, &paths.vault_file, &security.encryption_key)?;
-
-    println!("[ENGINE] Seluruh data telah diamankan kembali ke dalam vault. Sampai jumpa!");
+    if paths.vault_file.exists() {
+        println!("[VAULT] Mengamankan dan mengenkripsi ulang data runtime...");
+        VaultContainer::seal_folders(&paths.runtime_dir, &paths.vault_file, &security.encryption_key)?;
+        println!("[ENGINE] Seluruh data telah diamankan kembali ke dalam vault. Sampai jumpa!");
+    } else {
+        println!("[ENGINE] Seluruh layanan telah dimatikan dengan aman. Sampai jumpa!");
+    }
     Ok(())
 }

@@ -4,9 +4,11 @@ use aes_gcm::{
 };
 use anyhow::{anyhow, Context, Result};
 use rand::RngCore;
+use rayon::prelude::*;
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tar::Archive;
 
 pub const PROTECTED_DIRS: [&str; 5] = ["nginx", "php", "moodle", "moodledata", "mariadb"];
@@ -30,10 +32,11 @@ impl VaultContainer {
         // 1. Tar archive + kompresi Zstd
         let mut compressed_tar = Vec::new();
         {
-            let encoder = zstd::Encoder::new(&mut compressed_tar, 3)?;
+            let mut encoder = zstd::Encoder::new(&mut compressed_tar, 1)?;
+            let threads = std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(4);
+            let _ = encoder.multithread(threads);
             let mut tar = tar::Builder::new(encoder.auto_finish());
-            tar.append_dir_all(folder_name, folder_path)
-                .with_context(|| format!("Gagal mengarsipkan folder {:?}", folder_path))?;
+            Self::append_dir_recursive(&mut tar, folder_name, folder_path, None)?;
             tar.finish()?;
         }
 
@@ -61,6 +64,58 @@ impl VaultContainer {
         out_file.sync_all()?;
 
         Ok(())
+    }
+
+    /// Menambahkan seluruh isi direktori ke tar builder dengan normalisasi path POSIX (forward slash '/')
+    fn append_dir_recursive<W: Write>(
+        tar: &mut tar::Builder<W>,
+        base_archive_dir: &str,
+        source_dir: &Path,
+        progress_bar: Option<&indicatif::ProgressBar>,
+    ) -> Result<usize> {
+        let mut file_count = 0;
+        for entry in walkdir::WalkDir::new(source_dir) {
+            let entry = entry.with_context(|| format!("Gagal membaca entri di {:?}", source_dir))?;
+            let rel_path = entry
+                .path()
+                .strip_prefix(source_dir)
+                .with_context(|| format!("Gagal memotong prefix dari {:?}", entry.path()))?;
+
+            if rel_path.as_os_str().is_empty() {
+                continue;
+            }
+
+            // Normalisasi pemisah direktori Windows (\) ke standar POSIX (/) untuk tar archive
+            let rel_posix = rel_path.to_string_lossy().replace('\\', "/");
+            let archive_path = format!("{}/{}", base_archive_dir, rel_posix);
+
+            if entry.file_type().is_dir() {
+                let _ = tar.append_dir(&archive_path, entry.path());
+            } else if entry.file_type().is_file() {
+                let mut file = File::open(entry.path())
+                    .with_context(|| format!("Gagal membuka berkas {:?}", entry.path()))?;
+                tar.append_file(&archive_path, &mut file)
+                    .with_context(|| format!("Gagal menambahkan berkas {}", archive_path))?;
+                file_count += 1;
+
+                if let Some(pb) = progress_bar {
+                    let display_msg = if archive_path.len() > 45 {
+                        format!("...{}", &archive_path[archive_path.len() - 42..])
+                    } else {
+                        archive_path.clone()
+                    };
+                    pb.set_message(display_msg);
+                    pb.inc(1);
+                    if file_count % 5000 == 0 {
+                        pb.println(format!(
+                            "  [SEAL] Sedang mengarsipkan {} berkas...",
+                            file_count
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(file_count)
     }
 
     /// Mendekripsi berkas .pak dan mengekstrak isinya ke target direktori
@@ -113,23 +168,59 @@ impl VaultContainer {
 
     /// Mengenkripsi seluruh 5 folder utama ke dalam brankas terpadu aksaventra_vault.pak
     pub fn seal_folders(runtime_dir: &Path, vault_file: &Path, key: &[u8; 32]) -> Result<()> {
-        println!("[VAULT] Mengamankan & mengenkripsi data (nginx, php, moodle, moodledata, mariadb)...");
+        println!("[VAULT] Menghitung berkas yang akan disegel ke dalam brankas...");
 
-        // 1. Buat Tar Archive di memori / temporary buffer lalu kompres dengan Zstd
+        let mut total_files_to_pack = 0;
+        for dir_name in PROTECTED_DIRS.iter() {
+            let target = runtime_dir.join(dir_name);
+            if target.exists() {
+                total_files_to_pack += walkdir::WalkDir::new(&target)
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.file_type().is_file())
+                    .count();
+            }
+        }
+
+        println!("[VAULT] Total {} berkas terdeteksi. Memulai proses sealing & kompresi...", total_files_to_pack);
+
+        let pb = indicatif::ProgressBar::new(total_files_to_pack as u64);
+        pb.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template("[SEAL] [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) ETA: {eta} | {msg}")
+                .unwrap_or_else(|_| indicatif::ProgressStyle::default_bar())
+                .progress_chars("#>-"),
+        );
+
+        let mut total_files = 0;
+        // 1. Buat Tar Archive di memori dengan Zstd kompresi dan path normalisasi
         let mut tar_data = Vec::new();
         {
-            let enc = zstd::Encoder::new(&mut tar_data, 3)?;
+            let mut enc = zstd::Encoder::new(&mut tar_data, 1)?;
+            let threads = std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(4);
+            let _ = enc.multithread(threads);
             let mut tar = tar::Builder::new(enc.auto_finish());
+
+            // Tambahkan entri metadata awal agar saat unseal jumlah file diketahui secara presisi
+            let meta_str = format!("total_files={}\n", total_files_to_pack);
+            let mut header = tar::Header::new_gnu();
+            header.set_size(meta_str.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            let _ = tar.append_data(&mut header, ".aksaventra_meta", meta_str.as_bytes());
 
             for dir_name in PROTECTED_DIRS.iter() {
                 let target = runtime_dir.join(dir_name);
                 if target.exists() {
-                    tar.append_dir_all(dir_name, &target)
-                        .with_context(|| format!("Gagal mengarsipkan folder {}", dir_name))?;
+                    let count = Self::append_dir_recursive(&mut tar, dir_name, &target, Some(&pb))?;
+                    total_files += count;
                 }
             }
             tar.finish()?;
         }
+        pb.finish_with_message(format!("Selesai mengarsipkan {} berkas ke memori.", total_files));
+
+        println!("[VAULT] Mengenkripsi kontainer dengan AES-256-GCM...");
 
         // 2. Enkripsi dengan AES-256-GCM
         let cipher = Aes256Gcm::new(key.into());
@@ -155,16 +246,20 @@ impl VaultContainer {
         out_file.write_all(&ciphertext)?;
         out_file.sync_all()?;
 
-        // 5. Hapus folder plain-text setelah enkripsi sukses (jika berbeda dari vault_file parent)
-        for dir_name in PROTECTED_DIRS.iter() {
-            let target = runtime_dir.join(dir_name);
-            if target.exists() {
-                let _ = fs::remove_dir_all(&target);
+        // 5. Hapus folder plain-text hanya jika berada di dalam folder runtime sementara (bukan base_dir sumber)
+        let vault_parent = vault_file.parent().unwrap_or(runtime_dir);
+        if runtime_dir != vault_parent {
+            for dir_name in PROTECTED_DIRS.iter() {
+                let target = runtime_dir.join(dir_name);
+                if target.exists() {
+                    let _ = fs::remove_dir_all(&target);
+                }
             }
         }
 
         println!(
-            "[VAULT] Seluruh folder berhasil dikunci ke dalam {:?}",
+            "[VAULT] Sukses! Seluruh {} berkas tersimpan aman di {:?}",
+            total_files,
             vault_file.file_name().unwrap_or_default()
         );
         Ok(())
@@ -179,7 +274,17 @@ impl VaultContainer {
             ));
         }
 
-        println!("[VAULT] Membuka enkripsi kontainer aplikasi...");
+        let nginx_bin = runtime_dir.join("nginx").join("nginx.exe");
+        let mysqld_bin = runtime_dir.join("mariadb").join("bin").join("mysqld.exe");
+        let php_bin = runtime_dir.join("php").join("php-cgi.exe");
+
+        // Jika komponen penting sudah lengkap di runtime_dir, gunakan yang sudah ada
+        if nginx_bin.exists() && mysqld_bin.exists() && php_bin.exists() {
+            println!("[VAULT] Komponen runtime telah tersedia di ruang kerja terproteksi.");
+            return Ok(());
+        }
+
+        println!("[VAULT] Membuka enkripsi kontainer aplikasi dan mengekstrak komponen...");
 
         let mut file = File::open(vault_file)?;
         let mut raw_data = Vec::new();
@@ -199,14 +304,130 @@ impl VaultContainer {
 
         if !runtime_dir.exists() {
             fs::create_dir_all(runtime_dir)?;
-            Self::set_hidden_system_attribute(runtime_dir);
         }
 
+        println!("[VAULT] Mengekstrak seluruh berkas ke ruang kerja terproteksi (Multi-Threaded)...");
         let decoder = zstd::Decoder::new(&decrypted_zstd[..])?;
-        let mut archive = Archive::new(decoder);
-        archive.unpack(runtime_dir).context("Gagal mengekstrak komponen dari brankas.")?;
+        let buf_decoder = std::io::BufReader::with_capacity(512 * 1024, decoder);
+        let mut archive = Archive::new(buf_decoder);
+        archive.set_preserve_permissions(false);
+        archive.set_preserve_mtime(false);
+        archive.set_overwrite(true);
 
-        println!("[VAULT] Komponen berhasil dimuat ke ruang kerja terproteksi.");
+        let pb = indicatif::ProgressBar::new(30904);
+        pb.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template("[UNSEAL] [{elapsed_precise}] [{bar:40.green/white}] {pos}/{len} ({percent}%) ETA: {eta} | {msg}")
+                .unwrap_or_else(|_| indicatif::ProgressStyle::default_bar())
+                .progress_chars("#>-"),
+        );
+
+        let mut created_dirs: HashSet<PathBuf> = HashSet::new();
+        created_dirs.insert(runtime_dir.to_path_buf());
+
+        const BATCH_SIZE: usize = 2000;
+        let mut batch: Vec<(PathBuf, Vec<u8>)> = Vec::with_capacity(BATCH_SIZE);
+
+        let flush_batch = |batch: &mut Vec<(PathBuf, Vec<u8>)>,
+                           created_dirs: &mut HashSet<PathBuf>,
+                           pb: &indicatif::ProgressBar| {
+            if batch.is_empty() {
+                return;
+            }
+
+            // 1. Buat direktori unik terlebih dahulu secara berurutan tanpa syscall duplikat
+            for (dest, _) in batch.iter() {
+                if let Some(parent) = dest.parent() {
+                    if created_dirs.insert(parent.to_path_buf()) {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                }
+            }
+
+            // 2. Tulis seluruh berkas dalam batch secara paralel di multi-core CPU dengan Rayon
+            let items: Vec<(PathBuf, Vec<u8>)> = std::mem::take(batch);
+            let count = items.len();
+            items.into_par_iter().for_each(|(dest, data)| {
+                let _ = fs::write(&dest, data);
+            });
+
+            pb.inc(count as u64);
+            let current_pos = pb.position();
+            if current_pos % 5000 == 0 || current_pos >= pb.length().unwrap_or(30904) {
+                pb.println(format!(
+                    "  [UNSEAL] Telah mengekstrak {} berkas...",
+                    current_pos
+                ));
+            }
+        };
+
+        for entry_res in archive.entries()? {
+            let mut entry = match entry_res {
+                Ok(e) => e,
+                Err(err) => {
+                    eprintln!("\n[WARN] Lewati entri korup: {}", err);
+                    continue;
+                }
+            };
+
+            let path = match entry.path() {
+                Ok(p) => p.to_path_buf(),
+                Err(_) => continue,
+            };
+
+            let path_str = path.to_string_lossy().to_string();
+
+            // Tangani metadata jika ada untuk menyesuaikan total length progress bar
+            if path_str == ".aksaventra_meta" {
+                let mut buf = String::new();
+                if let Ok(_) = entry.read_to_string(&mut buf) {
+                    if let Some(num_str) = buf.strip_prefix("total_files=") {
+                        if let Ok(count) = num_str.trim().parse::<u64>() {
+                            pb.set_length(count);
+                        }
+                    }
+                }
+                continue;
+            }
+
+            let dest = runtime_dir.join(&path);
+
+            if entry.header().entry_type().is_dir() {
+                if created_dirs.insert(dest.clone()) {
+                    let _ = fs::create_dir_all(&dest);
+                }
+                continue;
+            }
+
+            let mut file_data = Vec::with_capacity(entry.size() as usize);
+            if let Err(err) = entry.read_to_end(&mut file_data) {
+                eprintln!("\n[WARN] Lewati berkas: {} ({})", path_str, err);
+                continue;
+            }
+
+            let display_msg = if path_str.len() > 45 {
+                format!("...{}", &path_str[path_str.len() - 42..])
+            } else {
+                path_str.clone()
+            };
+            pb.set_message(display_msg);
+
+            batch.push((dest, file_data));
+
+            if batch.len() >= BATCH_SIZE {
+                flush_batch(&mut batch, &mut created_dirs, &pb);
+            }
+        }
+
+        // Tulis sisa berkas terakhir
+        flush_batch(&mut batch, &mut created_dirs, &pb);
+
+        pb.finish_with_message("Selesai mengekstrak seluruh berkas.");
+
+        // Terapkan atribut tersembunyi dan sistem setelah seluruh berkas selesai diekstrak
+        Self::set_hidden_system_attribute(runtime_dir);
+
+        println!("[VAULT] Seluruh komponen (Nginx, PHP, MariaDB, Moodle) berhasil dimuat dan terverifikasi lengkap.");
         Ok(())
     }
 

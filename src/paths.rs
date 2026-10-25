@@ -19,17 +19,34 @@ impl PortablePaths {
     /// Inisialisasi jalur portabel secara otomatis dari direktori executable berjalan
     pub fn init() -> Result<Self> {
         let exe_path = env::current_exe()?;
-        let base_dir = exe_path
+        let mut base_dir = exe_path
             .parent()
             .ok_or_else(|| anyhow::anyhow!("Gagal mendeteksi direktori induk aplikasi"))?
             .to_path_buf();
+
+        // Jika binary dijalankan dari target/debug atau target/release (misalnya via `cargo run`),
+        // dan folder nginx/vault tidak ada di sana, gunakan current_dir jika valid
+        if !base_dir.join("nginx").exists() && !base_dir.join("aksaventra_vault.pak").exists() {
+            if let Ok(cwd) = env::current_dir() {
+                if cwd.join("nginx").exists() || cwd.join("aksaventra_vault.pak").exists() {
+                    base_dir = cwd;
+                }
+            }
+        }
+
         Ok(Self::from_base_dir(base_dir))
     }
 
     /// Membuat instance PortablePaths dari direktori basis tertentu
     pub fn from_base_dir(base_dir: PathBuf) -> Self {
-        let runtime_dir = base_dir.join(".aksaventra_rt");
         let vault_file = base_dir.join("aksaventra_vault.pak");
+        let runtime_dir = if vault_file.exists() {
+            base_dir.join(".aksaventra_rt")
+        } else if base_dir.join("nginx").exists() {
+            base_dir.clone()
+        } else {
+            base_dir.join(".aksaventra_rt")
+        };
 
         Self {
             nginx_dir: runtime_dir.join("nginx"),
