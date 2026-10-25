@@ -1,5 +1,3 @@
-### File 3: `issue-03-container.md`
-```markdown
 # Issue 03: Implementasi Kontainer Enkripsi Terproteksi (`container.rs`)
 
 **Label:** `security`, `encryption`, `core`  
