@@ -1,21 +1,30 @@
 [package]
-name = "aksaventra_installer"
-version = "0.2.0"
-edition = "2024"
-default-run = "aksaventra_installer"
-
-[[bin]]
-name = "aksaventra_installer"
-path = "src/main.rs"
+name = "aksaventra_engine"
+version = "2.0.0"
+edition = "2021"
+description = "Aksaventra Encrypted Portable Moodle Engine"
 
 [[bin]]
 name = "aksaventra_engine"
-path = "src/engine_main.rs"
+path = "src/main.rs"
 
 [dependencies]
-zip = "0.6"
-ctrlc = "3.4"
+anyhow = "1.0"
+tokio = { version = "1.38", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+aes-gcm = "0.10"
 sha2 = "0.10"
+rand = "0.8"
+tar = "0.4"
+zstd = "0.13"
+walkdir = "2.5"
+machine-uid = "0.5"
+ctrlc = "3.4"
+indicatif = "0.17"
+console = "0.15"
+winapi = { version = "0.3", features = ["fileapi", "winnt"] }
 
 [build-dependencies]
 winres = "0.1"

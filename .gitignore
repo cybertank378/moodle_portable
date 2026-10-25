@@ -1,21 +1,36 @@
-﻿# Rust build artifacts
+# Rust build artifacts
 /target
 Cargo.lock
 
 # Aksaventra Encrypted Vault & License
 *.pak
 *.lic
+.vault/
 .aksaventra_rt/
 .runtime_mount/
 
-# Raw Portable Folders (Jangan di-commit ke Git)
-/nginx/
-/php/
-/moodle/
-/moodledata/
-/mariadb/
+# Raw Portable Folders (Abaikan binari & data runtime, simpan template/default config)
+/nginx/*
+!/nginx/conf/
+/nginx/conf/*
+!/nginx/conf/nginx.conf
+!/nginx/conf/fastcgi_params
+!/nginx/conf/mime.types
 
-# Cleanup script sendiri (opsional jika tidak ingin di-commit)
+/php/*
+!/php/php.ini
+
+/moodle/*
+!/moodle/config.php
+
+/moodledata/
+
+/mariadb/*
+!/mariadb/data/
+/mariadb/data/*
+!/mariadb/data/my.ini
+
+# Cleanup scripts
 cleanup_repo.ps1
 cleanup_repo.sh
 
