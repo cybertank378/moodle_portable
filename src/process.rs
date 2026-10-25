@@ -1,86 +1,101 @@
-use std::ffi::OsStr;
-use std::io;
-use std::process::{Child, Command, ExitStatus, Stdio};
-
-#[cfg(windows)]
+use crate::paths::PortablePaths;
+use anyhow::{ Context, Result };
 use std::os::windows::process::CommandExt;
+use std::process::{ Child, Command, Stdio };
+use std::thread;
+use std::time::Duration;
 
-/// Win32 process creation flag to prevent console window creation.
-/// Value: 0x08000000 (CREATE_NO_WINDOW)
-pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-/// Extension trait to configure `std::process::Command` for silent execution.
-pub trait SilentCommandExt {
-    /// Applies `CREATE_NO_WINDOW` and redirects stdout & stderr to `Stdio::null()`.
-    fn make_silent(&mut self) -> &mut Self;
-
-    /// Applies `CREATE_NO_WINDOW` flag without altering stdout/stderr.
-    fn set_silent_flags(&mut self) -> &mut Self;
+pub struct ServiceOrchestrator {
+    mariadb_proc: Option<Child>,
+    php_proc: Option<Child>,
+    nginx_proc: Option<Child>,
 }
 
-impl SilentCommandExt for Command {
-    fn make_silent(&mut self) -> &mut Self {
-        self.set_silent_flags();
-        self.stdout(Stdio::null());
-        self.stderr(Stdio::null());
-        self
-    }
-
-    fn set_silent_flags(&mut self) -> &mut Self {
-        #[cfg(windows)]
-        {
-            self.creation_flags(CREATE_NO_WINDOW);
+impl ServiceOrchestrator {
+    pub fn new() -> Self {
+        Self {
+            mariadb_proc: None,
+            php_proc: None,
+            nginx_proc: None,
         }
-        self
-    }
-}
-
-/// Convenience factory to create a new `Command` pre-configured for silent background execution.
-pub fn create_silent_command<P: AsRef<OsStr>>(program: P) -> Command {
-    let mut cmd = Command::new(program);
-    cmd.make_silent();
-    cmd
-}
-
-/// Spawns a silent subprocess without creating any console window.
-pub fn spawn_silent(cmd: &mut Command) -> io::Result<Child> {
-    cmd.make_silent();
-    cmd.spawn()
-}
-
-/// Runs a silent subprocess to completion and returns its `ExitStatus`.
-pub fn run_silent_status(cmd: &mut Command) -> io::Result<ExitStatus> {
-    cmd.make_silent();
-    cmd.status()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_create_silent_command() {
-        let mut cmd = create_silent_command("cmd.exe");
-        cmd.args(["/C", "echo", "silent test"]);
-        let status = cmd.status();
-        assert!(status.is_ok(), "Silent command should execute without error");
-        assert!(status.unwrap().success(), "Silent command should exit with success");
     }
 
-    #[test]
-    fn test_spawn_silent() {
-        let mut cmd = Command::new("cmd.exe");
-        cmd.args(["/C", "exit", "0"]);
-        let mut child = spawn_silent(&mut cmd).expect("Failed to spawn silent process");
-        let status = child.wait().expect("Failed to wait on child process");
-        assert!(status.success(), "Child process should exit with 0");
+    pub fn start_all(&mut self, paths: &PortablePaths) -> Result<()> {
+        println!("[ENGINE] Menyalakan MariaDB Database Server...");
+        let mysqld_bin = paths.mariadb_dir.join("bin").join("mysqld.exe");
+        let my_ini = paths.mariadb_dir.join("data").join("my.ini");
+        self.mariadb_proc = Some(
+            Command::new(mysqld_bin)
+                .arg(format!("--defaults-file={}", my_ini.display()))
+                .current_dir(&paths.mariadb_dir)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn()
+                .context("Gagal menjalankan mysqld.exe")?
+        );
+
+        thread::sleep(Duration::from_secs(2));
+
+        println!("[ENGINE] Menyalakan PHP FastCGI (Port 9000)...");
+        let php_cgi_bin = paths.php_dir.join("php-cgi.exe");
+        let php_ini = paths.php_dir.join("php.ini");
+        self.php_proc = Some(
+            Command::new(php_cgi_bin)
+                .args(["-b", "127.0.0.1:9000", "-c", &php_ini.to_string_lossy()])
+                .current_dir(&paths.php_dir)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn()
+                .context("Gagal menjalankan php-cgi.exe")?
+        );
+
+        println!("[ENGINE] Menyalakan Nginx Web Server...");
+        let nginx_bin = paths.nginx_dir.join("nginx.exe");
+        self.nginx_proc = Some(
+            Command::new(nginx_bin)
+                .current_dir(&paths.nginx_dir)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn()
+                .context("Gagal menjalankan nginx.exe")?
+        );
+
+        Ok(())
     }
 
-    #[test]
-    fn test_run_silent_status() {
-        let mut cmd = Command::new("cmd.exe");
-        cmd.args(["/C", "exit", "0"]);
-        let status = run_silent_status(&mut cmd).expect("Failed to run silent command");
-        assert!(status.success(), "Command status should be success");
+    pub fn stop_all(&mut self, paths: &PortablePaths) {
+        println!("\n[ENGINE] Mematikan seluruh layanan aplikasi...");
+
+        // Hentikan Nginx secara halus
+        let _ = Command::new(paths.nginx_dir.join("nginx.exe"))
+            .args(["-s", "stop"])
+            .current_dir(&paths.nginx_dir)
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+
+        if let Some(mut child) = self.nginx_proc.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+
+        if let Some(mut child) = self.php_proc.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+
+        // Hentikan MariaDB secara bersih dengan mysqladmin shutdown agar tabel tidak rusak
+        let _ = Command::new(paths.mariadb_dir.join("bin").join("mysqladmin.exe"))
+            .args(["-u", "root", "shutdown"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+
+        if let Some(mut child) = self.mariadb_proc.take() {
+            let _ = child.wait();
+        }
     }
 }

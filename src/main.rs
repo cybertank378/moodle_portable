@@ -1,7 +1,11 @@
 use std::env;
 use std::process;
+use std::time::Duration;
 use aksaventra_installer::{
-    ensure_my_ini, provision_payload, resolve_target_directory, validate_target_directory,
+    build_mariadb_shutdown_command, create_database_with_params, ensure_my_ini,
+    install_moodle, patch_moodle_config_for_dynamic_ip, provision_payload,
+    resolve_target_directory, run_silent_status, start_mariadb,
+    stop_services_gracefully_with_port, validate_target_directory, wait_for_mariadb_ready,
     InstallStage, InstallationPaths, PayloadMode, PayloadProvisionConfig,
     ProgressTracker, PAYLOAD_ZIP,
 };
@@ -81,12 +85,17 @@ fn main() {
 
     let mut tracker = ProgressTracker::new().with_bar_width(28);
 
-    // Resolve target installation directory (CLI -> ENV -> ./runtime)
-    let target_dir = resolve_target_directory(&args);
-    if let Err(err) = validate_target_directory(&target_dir) {
+    // Resolve target installation directory (CLI -> ENV -> current directory)
+    let raw_target_dir = resolve_target_directory(&args);
+    if let Err(err) = validate_target_directory(&raw_target_dir) {
         eprintln!("[ERROR] Invalid target installation directory: {}", err);
         process::exit(1);
     }
+    let target_dir = if raw_target_dir.is_absolute() {
+        raw_target_dir
+    } else {
+        std::env::current_dir().unwrap_or_default().join(&raw_target_dir)
+    };
     println!("Target Installation Directory: {}", target_dir.display());
 
     // --- STAGE 1: PAYLOAD PROVISIONING (0% - 25%) ---
@@ -144,35 +153,110 @@ fn main() {
     }
 
     if !maria_paths.is_data_initialized() {
-        tracker.advance(InstallStage::DatabaseBootstrap, 60, "Running MariaDB database installer/initialization...");
+        tracker.advance(InstallStage::DatabaseBootstrap, 55, "Running MariaDB database installer/initialization...");
         if let Err(e) = maria_paths.run_installer() {
             eprintln!("[ERROR] Failed to run MariaDB installer: {}", e);
             process::exit(1);
         }
-        tracker.advance(InstallStage::DatabaseBootstrap, 70, "MariaDB database installation completed.");
+        tracker.advance(InstallStage::DatabaseBootstrap, 60, "MariaDB database initialization completed.");
     } else {
-        tracker.advance(InstallStage::DatabaseBootstrap, 70, "MariaDB database already initialized.");
+        tracker.advance(InstallStage::DatabaseBootstrap, 60, "MariaDB database already initialized.");
     }
 
-    // --- STAGE 4: AKSAVENTRA CONFIGURATION (70% - 90%) ---
-    tracker.advance(InstallStage::MoodleInstallation, 80, "Verifying Aksaventra web root and dynamic routing...");
-    let _moodle_paths = paths.to_moodle_paths();
+    // Start MariaDB temporarily to provision database and install Moodle
+    tracker.advance(InstallStage::DatabaseBootstrap, 65, "Booting MariaDB to provision application database...");
+    let mut maria_child = match start_mariadb(&maria_paths.base_dir) {
+        Ok(child) => child,
+        Err(e) => {
+            eprintln!("[ERROR] Failed to start MariaDB for database setup: {}", e);
+            process::exit(1);
+        }
+    };
 
-    tracker.advance(InstallStage::MoodleInstallation, 90, "Aksaventra environment verified.");
+    if !wait_for_mariadb_ready(3306, Duration::from_secs(15)) {
+        eprintln!("[ERROR] MariaDB failed to respond on port 3306.");
+        let _ = stop_services_gracefully_with_port(&paths.base_dir, 3306);
+        process::exit(1);
+    }
+
+    // Provision the 'moodle' database
+    if let Err(e) = create_database_with_params(&maria_paths.base_dir, 3306, "moodle") {
+        eprintln!("[ERROR] Failed to create database 'moodle': {}", e);
+        let _ = stop_services_gracefully_with_port(&paths.base_dir, 3306);
+        process::exit(1);
+    }
+    tracker.advance(InstallStage::DatabaseBootstrap, 70, "MariaDB database bootstrap completed.");
+
+    // --- STAGE 4: AKSAVENTRA CONFIGURATION (70% - 90%) ---
+    let moodle_paths = paths.to_moodle_paths();
+    if !moodle_paths.config_php.exists() {
+        tracker.advance(InstallStage::MoodleInstallation, 75, "Running automated Aksaventra Core installation (this may take a few minutes)...");
+        if let Err(e) = install_moodle(&target_dir) {
+            eprintln!("[ERROR] Failed to complete Aksaventra Core installation: {}", e);
+            let _ = stop_services_gracefully_with_port(&paths.base_dir, 3306);
+            process::exit(1);
+        }
+        tracker.advance(InstallStage::MoodleInstallation, 85, "Aksaventra Core tables installed.");
+        let _ = patch_moodle_config_for_dynamic_ip(&target_dir);
+        tracker.advance(InstallStage::MoodleInstallation, 90, "Aksaventra environment verified and dynamic IP patched.");
+    } else {
+        tracker.advance(InstallStage::MoodleInstallation, 85, "Aksaventra Core already installed.");
+        let _ = patch_moodle_config_for_dynamic_ip(&target_dir);
+        tracker.advance(InstallStage::MoodleInstallation, 90, "Aksaventra environment verified.");
+    }
+
+    // Safely shutdown the temporary MariaDB process now that installation is complete
+    let shutdown_paths = paths.to_shutdown_paths();
+    let mut shutdown_cmd = build_mariadb_shutdown_command(&shutdown_paths, 3306);
+    let _ = run_silent_status(&mut shutdown_cmd);
+    let _ = maria_child.wait();
 
     // --- STAGE 5: SERVICES & LAUNCH READY (90% - 100%) ---
-    tracker.advance(InstallStage::ServicesAndLaunch, 95, "Checking background daemons readiness...");
-    let _cron_paths = paths.to_cron_paths();
-    let _shutdown_paths = paths.to_shutdown_paths();
+    tracker.advance(InstallStage::ServicesAndLaunch, 95, "Setting up Aksaventra Portable Engine launcher...");
+
+    // Copy aksaventra_engine.exe to target directory if available
+    let engine_filename = "aksaventra_engine.exe";
+    let target_engine_path = target_dir.join(engine_filename);
+
+    let find_engine = || -> Option<std::path::PathBuf> {
+        if let Ok(exe_path) = env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let candidate = exe_dir.join(engine_filename);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
+        let cwd_candidate = std::path::PathBuf::from(engine_filename);
+        if cwd_candidate.exists() {
+            return Some(cwd_candidate);
+        }
+        None
+    };
+
+    if let Some(src_engine) = find_engine() {
+        if src_engine != target_engine_path {
+            let _ = std::fs::copy(&src_engine, &target_engine_path);
+        }
+    }
 
     tracker.advance(InstallStage::ServicesAndLaunch, 100, "Installation & runtime verification complete!");
 
     println!();
     println!("Active Installation Components:");
-    println!("  - Aksaventra Web Root:    {}", paths.moodle_dir.display());
-    println!("  - Aksaventra Data Storage: {}", paths.moodledata_dir.display());
-    println!("  - Nginx Server:       {}", paths.nginx_dir.display());
-    println!("  - PHP 8.2 Runtime:    {}", paths.php_dir.display());
-    println!("  - MariaDB Database:   {}", paths.mariadb_dir.display());
+    println!("  - Aksaventra Web Root:     {}", paths.moodle_dir.display());
+    println!("  - Aksaventra Data Storage:  {}", paths.moodledata_dir.display());
+    println!("  - Nginx Server:            {}", paths.nginx_dir.display());
+    println!("  - PHP 8.2 Runtime:         {}", paths.php_dir.display());
+    println!("  - MariaDB Database:        {}", paths.mariadb_dir.display());
+    if target_engine_path.exists() {
+        println!("  - Aksaventra Engine:       {}", target_engine_path.display());
+    }
+    println!("==========================================================");
+    println!(" [SUKSES] Instalasi & Konfigurasi Aksaventra Selesai 100%!");
+    println!();
+    println!(" Untuk menjalankan server LMS, jalankan berkas:");
+    println!("   .\\aksaventra_engine.exe");
+    println!(" lalu buka browser di http://localhost");
     println!("==========================================================");
 }

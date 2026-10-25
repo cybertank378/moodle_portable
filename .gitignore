@@ -1,16 +1,26 @@
+﻿# Rust build artifacts
 /target
-/runtime
-/.cache_downloads
-/staging_payload
-/scratch
+Cargo.lock
+
+# Aksaventra Encrypted Vault & License
 *.pak
-payload.zip
-/.temp_*
-*.log
-mariadb-install-log.txt
-/mariadb
-/moodle
-/moodledata
-/nginx
-/php
-placeholder.txt
+*.lic
+.aksaventra_rt/
+.runtime_mount/
+
+# Raw Portable Folders (Jangan di-commit ke Git)
+/nginx/
+/php/
+/moodle/
+/moodledata/
+/mariadb/
+
+# Cleanup script sendiri (opsional jika tidak ingin di-commit)
+cleanup_repo.ps1
+cleanup_repo.sh
+
+# OS & IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
