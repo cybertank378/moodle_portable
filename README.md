@@ -1,105 +1,100 @@
-# Aksaventra Portable (LMS Portable) 64-bit
+# Aksaventra Portable Engine v2.0 (LMS Portable 64-bit)
 
 [![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20x64-blue.svg)]()
-[![Release](https://img.shields.io/badge/Release-v0.2.0-brightgreen.svg)](https://github.com/cybertank378/moodle_portable/releases/tag/v0.2.0)
+[![Release](https://img.shields.io/badge/Release-v2.0.0-brightgreen.svg)](https://github.com/cybertank378/moodle_portable/releases/tag/v2.0.0)
 [![License](https://img.shields.io/badge/License-GPL--3.0-lightgrey.svg)]()
 
-**Aksaventra Portable** adalah aplikasi Learning Management System (LMS) portabel berbasis web yang dirancang agar dapat langsung berjalan secara portabel pada Microsoft Windows (64-bit). 
+**Aksaventra Portable Engine v2.0** adalah platform Learning Management System (LMS) portabel berbasis web mandiri untuk Microsoft Windows (64-bit). 
 
-Seluruh tumpukan server (**Nginx**, **PHP 8.2**, **MariaDB**, dan **Aksaventra Core**) sudah dikemas menjadi satu kesatuan mandiri. Anda **tidak perlu menginstal XAMPP, WampServer, Docker, ataupun perangkat lunak tambahan lainnya**, dan **tidak membutuhkan hak Administrator (UAC)**.
+Seluruh tumpukan server (**Nginx Web Server**, **PHP 8.2 FastCGI**, **MariaDB Database Server**, dan **Moodle LMS Core**) dikemas ke dalam satu kontainer brankas terenkripsi (**`aksaventra_vault.pak`**) dengan perlindungan enkripsi militer **AES-256-GCM** dan kompresi multi-threaded **Zstandard (`zstdmt`)**.
+
+Anda **tidak perlu menginstal XAMPP, WampServer, Docker, atau software pihak ketiga lainnya**, dan **tidak memerlukan hak Administrator (UAC)**.
 
 ---
 
 ## 📋 Daftar Isi
-1. [Panduan Pengguna Akhir (End-User Quick Start)](#-panduan-pengguna-akhir-end-user-quick-start)
-   - [Langkah 1: Unduh Paket Rilis](#langkah-1-unduh-paket-rilis)
+1. [Panduan Pengguna Akhir (Quick Start)](#-panduan-pengguna-akhir-quick-start)
+   - [Langkah 1: Unduh Paket Rilis v2.0.0](#langkah-1-unduh-paket-rilis-v200)
    - [Langkah 2: Persiapan Berkas Aplikasi](#langkah-2-persiapan-berkas-aplikasi)
-   - [Langkah 3: Jalankan `aksaventra_installer.exe`](#langkah-3-jalankan-aksaventra_installerexe)
+   - [Langkah 3: Jalankan `aksaventra_engine.exe`](#langkah-3-jalankan-aksaventra_engineexe)
    - [Langkah 4: Akses LMS Melalui Browser](#langkah-4-akses-lms-melalui-browser)
    - [Langkah 5: Cara Menutup Aplikasi dengan Aman](#langkah-5-cara-menutup-aplikasi-dengan-aman)
-2. [Akses Multi-Perangkat (HP / Laptop Siswa via Wi-Fi/LAN)](#-akses-multi-perangkat-hp--laptop-siswa-via-wi-filan)
-3. [Portabilitas & Pencadangan (Backup ke Flashdisk)](#-portabilitas--pencadangan-backup-ke-flashdisk)
-4. [Tanya Jawab & Pemecahan Masalah (Troubleshooting)](#-tanya-jawab--pemecahan-masalah-troubleshooting)
-5. [Fitur Unggulan](#-fitur-unggulan)
-6. [Komponen Stack 64-bit](#-komponen-stack-64-bit)
-7. [Kebutuhan Sistem (System Requirements)](#-kebutuhan-sistem-system-requirements)
-8. [Opsi Baris Perintah CLI (Tingkat Lanjut)](#-opsi-baris-perintah-cli-tingkat-lanjut)
-9. [Panduan Pengembang (Build from Source)](#-panduan-pengembang-build-from-source)
-10. [Struktur Kode Sumber & Lisensi](#-struktur-kode-sumber--lisensi)
+2. [Sistem Lisensi & Mode Demo](#-sistem-lisensi--mode-demo)
+3. [Arsitektur & Keunggulan Akselerasi v2.0](#-arsitektur--keunggulan-akselerasi-v20)
+4. [Akses Multi-Perangkat (HP / Laptop Siswa via Wi-Fi/LAN)](#-akses-multi-perangkat-hp--laptop-siswa-via-wi-filan)
+5. [Portabilitas & Pencadangan (Backup ke Flashdisk)](#-portabilitas--pencadangan-backup-ke-flashdisk)
+6. [Tanya Jawab & Pemecahan Masalah (Troubleshooting)](#-tanya-jawab--pemecahan-masalah-troubleshooting)
+7. [Opsi Baris Perintah CLI (Tingkat Lanjut)](#-opsi-baris-perintah-cli-tingkat-lanjut)
+8. [Panduan Pengembang (Build from Source)](#-panduan-pengembang-build-from-source)
+9. [Struktur Kode Sumber & Lisensi](#-struktur-kode-sumber--lisensi)
 
 ---
 
-## 🚀 Panduan Pengguna Akhir (End-User Quick Start)
+## 🚀 Panduan Pengguna Akhir (Quick Start)
 
-Panduan ini ditujukan bagi guru, pengajar, proktor ujian, administrator sekolah, atau pengguna umum yang ingin langsung menjalankan aplikasi LMS tanpa ribet.
+Panduan ini ditujukan bagi guru, pengajar, proktor ujian, administrator sekolah, atau pengguna umum yang ingin langsung menjalankan aplikasi LMS tanpa setup rumit.
 
-### Langkah 1: Unduh Paket Rilis
+### Langkah 1: Unduh Paket Rilis v2.0.0
 Kunjungi halaman rilis resmi kami di GitHub:
-👉 **[Unduh Aksaventra Portable v0.2.0](https://github.com/cybertank378/moodle_portable/releases/tag/v0.2.0)**
+👉 **[Unduh Aksaventra Portable Engine v2.0.0](https://github.com/cybertank378/moodle_portable/releases/tag/v2.0.0)**
 
-Pilih dan unduh berkas arsip zip:
-- **`aksaventra-portable-v0.2.0-windows-x64.zip`** (berisi launcher biner, wadah terenkripsi `payload.pak`, dan dokumentasi).
-
-> [!TIP]
-> Anda juga dapat mengunduh berkas `aksaventra_installer.exe` dan `payload.pak` secara terpisah, asalkan keduanya disimpan dalam folder yang sama.
+Paket distribusi mencakup:
+- 🚀 **`aksaventra_engine.exe`** (Engine peluncur mandiri berbasis Rust)
+- 📦 **`aksaventra_vault.pak`** (Kontainer brankas terenkripsi AES-256-GCM + ZstdMT)
+- 🔑 **`serial_key.lic`** (Berkas lisensi perangkat / evaluasi demo)
 
 ---
 
 ### Langkah 2: Persiapan Berkas Aplikasi
-Pastikan berkas aplikasi berada di dalam satu folder yang sama:
+Pastikan ketiga berkas di atas berada di dalam **satu folder yang sama** (misalnya di `D:\AksaventraLMS` atau langsung pada Flashdisk USB):
 
-- **Jika Anda mengunduh berkas `.zip`**:
-  1. Klik kanan pada berkas `aksaventra-portable-v0.2.0-windows-x64.zip`.
-  2. Pilih **Extract All...** (Ekstrak Semua), lalu tentukan lokasi folder (misal: `D:\AksaventraPortable` atau langsung di flashdisk).
-  3. Klik **Extract**.
-  4. Masuk ke dalam folder hasil ekstraksi. Anda akan melihat berkas utama:
-     - 🚀 **`aksaventra_installer.exe`** (aplikasi peluncur)
-     - 📦 **`payload.pak`** (paket sistem LMS portabel)
-
-- **Jika Anda mengunduh berkas secara terpisah**:
-  - Cukup buat satu folder baru (misal: `AksaventraPortable`), lalu letakkan berkas **`aksaventra_installer.exe`** dan **`payload.pak`** di dalam folder tersebut secara berdampingan.
+```text
+AksaventraLMS/
+├── aksaventra_engine.exe
+├── aksaventra_vault.pak
+└── serial_key.lic
+```
 
 > [!WARNING]
-> **Penting**: Berkas `payload.pak` **JANGAN dibuka, diubah, atau diekstrak secara manual**. Berkas tersebut telah dienkripsi khusus dan akan dibaca serta dipasang secara otomatis oleh `aksaventra_installer.exe`.
+> Berkas `aksaventra_vault.pak` adalah kontainer biner terotentikasi. **JANGAN dibuka, diubah, atau diekstrak secara manual**. Engine `aksaventra_engine.exe` akan mendekripsi dan memverifikasi integritasnya secara otomatis ke ruang kerja terlindungi (`.aksaventra_rt`).
 
 ---
 
-### Langkah 3: Jalankan `aksaventra_installer.exe`
-1. Buka folder yang berisi `aksaventra_installer.exe` dan `payload.pak`.
-2. Klik dua kali pada file **`aksaventra_installer.exe`**.
-3. Jendela konsol akan muncul dan menampilkan visual *progress bar* kemajuan inisialisasi:
+### Langkah 3: Jalankan `aksaventra_engine.exe`
+1. Klik dua kali pada file **`aksaventra_engine.exe`**.
+2. Jendela konsol akan muncul menampilkan lisensi, inisialisasi port, dan indikator kemajuan (*progress bar* real-time):
 
 ```text
-==========================================================
-          Aksaventra Portable 64-bit Engine Initializing      
-==========================================================
-Target Installation Directory: ./runtime
-[=>                          ]   5% [Stage 1/5] Payload Provisioning - Detecting network connectivity...
-[====>                       ]  15% [Stage 1/5] Payload Provisioning - Provisioning runtime payload...
-[=======>                    ]  25% [Stage 1/5] Payload Provisioning - Extracted components successfully.
-[=========>                  ]  35% [Stage 2/5] Sandbox Setup & Pruning - Configuring unified installation paths...
-[============>               ]  45% [Stage 2/5] Sandbox Setup & Pruning - Writing secure Nginx sandbox configuration...
-[===============>            ]  50% [Stage 3/5] MariaDB Database Bootstrap - Configuring MariaDB paths and buffer pool...
-[=================>          ]  60% [Stage 3/5] MariaDB Database Bootstrap - Running MariaDB database installer/initialization...
-[===================>        ]  70% [Stage 3/5] MariaDB Database Bootstrap - MariaDB database installation completed.
-[======================>     ]  80% [Stage 4/5] Aksaventra Core Installation - Verifying Aksaventra web root and dynamic routing...
-[=========================>  ]  90% [Stage 4/5] Aksaventra Core Installation - Aksaventra environment verified.
-[==========================> ]  95% [Stage 5/5] Services Launch & Ready - Checking background daemons readiness...
-[============================] 100% [Stage 5/5] Services Launch & Ready - Installation & runtime verification complete!
-
-Active Installation Components:
-  - Aksaventra Web Root:    ./runtime/moodle
-  - Aksaventra Data Storage: ./runtime/moodledata
-  - Nginx Server:       ./runtime/nginx
-  - PHP 8.2 Runtime:    ./runtime/php
-  - MariaDB Database:   ./runtime/mariadb
-==========================================================
+======================================================
+          AKSAVENTRA PORTABLE ENGINE v2.0             
+       Powered by Rust | aksaventra.ai.id             
+======================================================
+[AKSAVENTRA] Menggunakan Lisensi DEMO / TRIAL (Mode Evaluasi)
+[AKSAVENTRA] Serial Key     : DEMO-AKSAVENTRA-2026
+[AKSAVENTRA] Status Lisensi : Aktif (Demo Terverifikasi)
+[VAULT] Membuka enkripsi kontainer aplikasi dan mengekstrak komponen...
+[UNSEAL] [00:00:15] [########################################] 30904/30904 (100%) ETA: 00:00:00 | Selesai mengekstrak seluruh berkas.
+[ENGINE] Menyalakan MariaDB Database Server (Port 3306)...
+  [OK] MariaDB Database Server siap menerima koneksi.
+  [OK] Database 'moodle' (utf8mb4_unicode_ci) terverifikasi & siap.
+[ENGINE] Menyalakan PHP FastCGI (Port 9000)...
+  [OK] PHP FastCGI Daemon aktif.
+[ENGINE] Menyalakan Nginx Web Server (Port 8080)...
+  [OK] Nginx Web Server aktif.
+======================================================
+   AKSAVENTRA PORTABLE LMS TELAH AKTIF & BERJALAN     
+======================================================
+  Alamat URL Web:  http://127.0.0.1:8080
+  Status Layanan:  MariaDB, PHP FastCGI, Nginx (Aktif)
+======================================================
+  Tekan Ctrl+C untuk menutup dan mengamankan data.     
+======================================================
 ```
 
 > [!NOTE]
-> - Ekstraksi awal hanya berlangsung sekali (sekitar 15-30 detik tergantung kecepatan disk Anda).
-> - Pada peluncuran berikutnya, engine otomatis mendeteksi folder runtime yang sudah ada dan langsung aktif dalam hitungan detik.
+> - Ekstraksi awal didukung akselerasi multi-core CPU (Rayon parallel batching), selesai dalam hitungan detik.
+> - Pada peluncuran berikutnya, engine otomatis mendeteksi komponen runtime yang sudah ada dan langsung aktif dalam **< 1 detik** (*Fast-Boot Cache*).
 
 ---
 
@@ -107,169 +102,107 @@ Active Installation Components:
 Setelah proses inisialisasi selesai:
 1. Browser default Anda akan terbuka secara otomatis ke alamat:
    ```text
-   http://localhost
+   http://127.0.0.1:8080
    ```
-2. Anda akan diarahkan ke halaman login LMS.
-3. Masuk menggunakan akun **Administrator Bawaan**:
+2. Anda akan langsung melihat beranda LMS Moodle. Masuk menggunakan akun **Administrator Bawaan**:
    - **Username**: `admin`
    - **Password**: `Admin123!`
-
-> [!IMPORTANT]
-> **Saran Keamanan**: Segera ubah kata sandi administrator setelah login pertama kali melalui menu *Profile -> Change password*.
 
 ---
 
 ### Langkah 5: Cara Menutup Aplikasi dengan Aman
 Untuk menjaga agar data ujian, materi, dan database tidak rusak atau korup:
-1. Kembali ke jendela konsol/terminal `aksaventra_installer.exe`.
+1. Kembali ke jendela terminal `aksaventra_engine.exe`.
 2. Tekan kombinasi tombol **`Ctrl + C`**.
 3. Sistem *Graceful Shutdown Manager* akan otomatis:
    - Menghentikan web server Nginx secara teratur.
+   - Menghentikan proses worker PHP FastCGI.
    - Menyimpan seluruh antrean data (*buffer flush*) dan mematikan MariaDB secara bersih.
-   - Menghentikan proses worker PHP.
-4. Jendela terminal akan tertutup dengan aman.
+   - Mengenkripsi kembali seluruh perubahan data ke dalam kontainer vault.
+
+---
+
+## 🔑 Sistem Lisensi & Mode Demo
+
+Aksaventra Engine v2.0 dilengkapi dengan sistem otentikasi lisensi berbasis cryptographic signature dan Hardware ID (HWID):
+
+1. **Lisensi Produksi (Online)**:
+   - Menghubungkan Serial Key dengan HWID perangkat via server `https://aksaventra.ai.id/api/license/verify`.
+   - Mengunduh kunci enkripsi brankas yang diikat khusus untuk perangkat Anda.
+2. **Mode Demo / Trial (Offline)**:
+   - Berkas `serial_key.lic` bawaan berisi kunci demo:
+     ```text
+     DEMO-AKSAVENTRA-2026
+     ```
+   - Berfungsi 100% secara offline tanpa memerlukan sambungan internet untuk keperluan pengujian dan evaluasi mandiri.
+
+---
+
+## ⚡ Arsitektur & Keunggulan Akselerasi v2.0
+
+- **Multi-Threaded Vault Packaging (`zstdmt` Level 1)**:
+  - Mengompresi 30.904 berkas ke dalam wadah `aksaventra_vault.pak` menggunakan multi-core CPU secara paralel (~59 detik).
+- **Parallel Batch Extraction (Rayon Multi-Threading)**:
+  - Ekstraksi batch 2.000 berkas secara paralel ke SSD/NVMe dengan queue depth tinggi, memangkas waktu unseal dari hitungan menit menjadi hitungan detik.
+- **Directory Deduplication**:
+  - Pelacakan struktur direktori dengan `HashSet<PathBuf>` yang mengeliminasi puluhan ribu pemanggilan syscall `CreateDirectoryW` berulang pada Windows NTFS.
+- **Dynamic Port Discovery**:
+  - Jika port default (8080) sedang digunakan aplikasi lain, engine otomatis mendeteksi dan mengalihkan ke port bebas berikutnya (8081, 8082, dst.) tanpa error bentrok.
+- **Headless Win32 Process Orchestrator**:
+  - Seluruh daemon (Nginx, PHP, MariaDB) dijalankan tanpa jendela CMD yang mengganggu (`CREATE_NO_WINDOW`).
+- **Automated MariaDB Bootstrap**:
+  - Inisialisasi otomatis `mariadb-install-db.exe` dan pembuatan database `moodle` (`utf8mb4_unicode_ci`) pada saat startup.
 
 ---
 
 ## 📱 Akses Multi-Perangkat (HP / Laptop Siswa via Wi-Fi/LAN)
 
-Aksaventra Portable dilengkapi dengan fitur **Dynamic LAN IP Routing**. Guru/admin dapat menjalankan aplikasi di laptop server, dan seluruh siswa dapat membuka ujian atau materi belajar dari ponsel pintar atau laptop mereka masing-masing.
-
-### Cara Menghubungkan Siswa:
 1. Pastikan laptop server dan perangkat siswa terhubung ke **jaringan Wi-Fi atau hotspot yang sama**.
-2. Periksa alamat IP lokal laptop server Anda (bisa dilihat di output terminal aplikasi atau ketik `ipconfig` di Command Prompt).
-   - Misal alamat IP laptop Anda adalah: `192.168.1.15`
-3. Beritahukan alamat tersebut kepada siswa. Siswa cukup membuka browser di HP (Google Chrome, Safari, Firefox) dan mengetik:
+2. Cari tahu alamat IP lokal laptop server Anda (ketik `ipconfig` di Command Prompt, misal: `192.168.1.50`).
+3. Beritahukan alamat tersebut kepada siswa:
    ```text
-   http://192.168.1.15
+   http://192.168.1.50:8080
    ```
-4. Siswa langsung dapat masuk, membaca modul, atau mengerjakan kuis/ujian tanpa perlu menginstal aplikasi apapun!
+4. Siswa langsung dapat masuk dan mengerjakan ujian/kuis dari peramban HP mereka tanpa perlu menginstal aplikasi tambahan.
 
 ---
 
 ## 💾 Portabilitas & Pencadangan (Backup ke Flashdisk)
 
-Salah satu keunggulan terbesar Aksaventra Portable adalah **True Portability**:
-- Seluruh data kursus, akun pengguna, bank soal, dan berkas unggahan tersimpan di dalam folder `runtime/` (`runtime/mariadb/data` dan `runtime/moodledata`).
-- Jika Anda ingin memindahkan sistem ke komputer/laptop lain:
-  1. Hentikan aplikasi dengan `Ctrl + C`.
-  2. Salin seluruh folder aplikasi (beserta folder `runtime/` di dalamnya) ke flashdisk eksternal.
-  3. Colokkan flashdisk ke komputer sekolah/kantor lain, lalu jalankan `aksaventra_installer.exe`.
-  4. Semua data kursus, nilai, dan akun siswa tetap utuh 100%!
-
----
-
-## ❓ Tanya Jawab & Pemecahan Masalah (Troubleshooting)
-
-### Q: Muncul jendela Windows Defender Firewall saat pertama kali dijalankan?
-> **Jawab**: Klik tombol **Allow Access** (Izinkan Akses) untuk jaringan privat. Ini diperlukan agar Nginx dan MariaDB dapat menerima koneksi dari HP siswa di jaringan Wi-Fi lokal.
-
-### Q: Mengapa siswa tidak bisa membuka web dari HP mereka?
-> **Solusi**:
-> 1. Pastikan laptop server dan HP siswa terhubung ke satu Wi-Fi yang sama.
-> 2. Pastikan Wi-Fi router tidak mengaktifkan fitur *Client Isolation* / *AP Isolation* (yang membatasi komunikasi antar perangkat).
-> 3. Periksa apakah Windows Firewall di laptop Anda memblokir Port 80. Tambahkan izin port 80 pada *Inbound Rules* Windows Firewall jika diperlukan.
-
-### Q: Port 80 bentrok (Port 80 already in use)?
-> **Solusi**: Pastikan tidak ada aplikasi web server lain (seperti Apache XAMPP, IIS bawaan Windows, atau Skype lama) yang sedang berjalan di komputer Anda. Hentikan aplikasi tersebut sebelum menjalankan Aksaventra Portable.
-
-### Q: Bolehkah folder `payload.pak` dihapus setelah instalasi selesai?
-> **Jawab**: Setelah folder `runtime` terbentuk, aplikasi menggunakan file di dalam `runtime`. Namun, kami menyarankan tetap menyimpan `payload.pak` sebagai cadangan instalasi ulang jika Anda ingin mereset LMS ke kondisi awal.
-
----
-
-## 🌟 Fitur Unggulan
-
-- **Zero-Configuration & Portable**: Berjalan langsung tanpa instalasi setup rumit yang mengotori registri Windows.
-- **Wadah Biner Terenkripsi Anti-Tamper (`payload.pak`)**:
-  - Menggantikan berkas zip polos dengan format biner berkepala `AKSA`.
-  - Tidak dapat dibuka atau diubah secara sembarangan oleh utilitas arsip umum (WinRAR, 7-Zip, File Explorer).
-  - Dilengkapi verifikasi integritas cryptographic SHA-256 (jika diubah 1 byte sekalipun, engine menolak ekstraksi demi keamanan data).
-  - Didekripsi langsung ke memori RAM (*in-memory streaming*), tidak meninggalkan file zip mentah di hard disk.
-- **Dual-Mode Payload Provisioning**:
-  - *Online Mode*: Mengunduh paket runtime resmi saat koneksi internet aktif.
-  - *Offline Mode*: Bekerja luring penuh tanpa internet menggunakan berkas lokal `payload.pak`.
-- **MSI-Packaged MariaDB Dependency & Dynamic Silent Installation**:
-  - Khusus MariaDB **hanya di-pack bersih sebagai berkas dependency MSI** (`mariadb-13.0.2-winx64.msi`) ke dalam wadah `payload.pak` tanpa pra-instalasi dari mesin pembuat.
-  - Ketika proses ekstraksi runtime selesai di komputer pengguna, engine installer otomatis mengeksekusi installer resmi MariaDB MSI (`msiexec.exe /i ... /qn /norestart`) secara *silent* dan *native* di mesin pengguna.
-  - Menjamin kompatibilitas penuh, kebersihan instalasi tanpa residu, serta portabilitas dinamis sesuai direktori yang dipilih pengguna.
-- **Zero Missing Packages & Complete Ecosystem**:
-  - Seluruh modul aktivitas resmi (Forum, Assignment, Quiz, Wiki, SCORM, dll.) lengkap 100%.
-- **Visual Progress Bar**: Menampilkan indikator kemajuan proses instalasi (0% s/d 100%) secara bertahap pada konsol.
-- **Dynamic LAN IP Routing**: Menyesuaikan routing secara dinamis sehingga LMS dapat langsung diakses oleh perangkat lain di jaringan LAN.
-- **Background Cron Scheduler**: Thread internal mengeksekusi cron otomatis setiap 60 detik tanpa memblokir sistem.
-- **Graceful Shutdown**: Prosedur penutupan tertib via sinyal `Ctrl + C` untuk mencegah korupsi tabel database.
-
----
-
-## 📦 Komponen Stack 64-bit
-
-Seluruh modul dan executable beroperasi pada arsitektur **murni 64-bit (x86_64 / AMD64)**:
-
-| Komponen | Versi | Sumber Resmi |
-| :--- | :--- | :--- |
-| **Aksaventra Core** | v5.0.11 | [Official Stable 500 Engine](https://packaging.moodle.org/stable500/moodle-5.0.11.zip) |
-| **PHP Runtime** | 8.2.12 x64 | [PHP for Windows (Win32-vs16-x64)](https://windows.php.net/downloads/releases/archives/php-8.2.12-Win32-vs16-x64.zip) |
-| **Nginx Server** | 1.31.7 | [Nginx.org Official Windows Build](https://nginx.org/download/nginx-1.31.7.zip) |
-| **MariaDB** | 13.0.2 x64 MSI | [MariaDB Official Community Server](https://downloads.mariadb.org/rest-api/mariadb/13.0.2/mariadb-13.0.2-winx64.msi) |
-
----
-
-## 💻 Kebutuhan Sistem (System Requirements)
-
-### Untuk Menjalankan Aplikasi (End-User):
-- **Sistem Operasi**: Windows 10 atau Windows 11 (64-bit).
-- **Arsitektur CPU**: x86_64 / AMD64.
-- **RAM**: Minimal 2 GB (Disarankan 4 GB+ agar performa maksimal).
-- **Ruang Disk Bebas**: Minimal 1 GB.
-- **Hak Akses**: Standard User (tidak membutuhkan hak Administrator).
-
-### Untuk Membangun dari Sumber (Developer):
-- **Rust Toolchain**: Versi 1.85+ (Edition 2024), target `x86_64-pc-windows-msvc`.
-- **PowerShell**: Windows PowerShell 5.1+ atau PowerShell 7+ (`pwsh`).
-- **Git for Windows**.
+- Seluruh data kursus, akun pengguna, bank soal, dan berkas unggahan tersimpan di dalam ruang kerja `.aksaventra_rt` (`.aksaventra_rt/mariadb/data` dan `.aksaventra_rt/moodledata`).
+- Saat aplikasi ditutup dengan `Ctrl + C`, seluruh perubahan diamankan kembali ke dalam kontainer.
+- Anda dapat menyalin folder aplikasi ke flashdisk USB dan membawanya ke komputer lain tanpa kehilangan data.
 
 ---
 
 ## ⚙️ Opsi Baris Perintah CLI (Tingkat Lanjut)
 
-Untuk administrator yang ingin mengotomasi instalasi atau menentukan direktori tertentu via terminal:
+```text
+Penggunaan: aksaventra_engine.exe [PILIHAN]
 
-```bash
-aksaventra_installer.exe [OPTIONS]
+Pilihan:
+  --encrypt, --pack          Kemas folder mentah ke dalam brankas terenkripsi (.pak)
+  -p, --port <PORT>          Tentukan port lokal khusus (default: 8080)
+  --skip-browser             Jangan buka peramban secara otomatis
+  -h, --help                 Tampilkan bantuan ini
 ```
 
-### Opsi Tersedia:
-| Flag | Parameter | Deskripsi |
-| :--- | :--- | :--- |
-| `-d`, `--install-dir` | `<PATH>` | Menentukan lokasi direktori target instalasi kustom (default: `./runtime`). |
-| `-t`, `--target` | `<PATH>` | Alias untuk `--install-dir`. |
-| `--pack-container` | `<ZIP> <PAK>` | Mengemas berkas `.zip` biasa menjadi wadah biner terenkripsi anti-tamper `.pak`. |
-| `--verify-container` | `<PAK>` | Memverifikasi tanda tangan header dan keaslian checksum SHA-256 wadah `.pak`. |
-| `-h`, `--help` | - | Menampilkan petunjuk opsi penggunaan CLI. |
-
-### Variabel Lingkungan:
-- `AKSAVENTRA_INSTALL_DIR`: Menentukan direktori instalasi primer via environment variable.
-- `MOODLE_INSTALL_DIR`: Fallback variabel lingkungan jika `AKSAVENTRA_INSTALL_DIR` tidak diisi.
-
-### Contoh Penggunaan:
+Contoh:
 ```powershell
-# Menentukan folder instalasi di drive D:
-.\aksaventra_installer.exe --install-dir "D:\LMS_Sekolah"
+# Menjalankan pada port khusus 8888 tanpa membuka browser otomatis:
+.\aksaventra_engine.exe -p 8888 --skip-browser
 
-# Menggunakan variabel lingkungan:
-$env:AKSAVENTRA_INSTALL_DIR = "E:\PortableLMS"
-.\aksaventra_installer.exe
-
-# Memverifikasi integritas payload.pak:
-.\aksaventra_installer.exe --verify-container "payload.pak"
+# Mengemas ulang berkas sumber ke dalam aksaventra_vault.pak:
+.\aksaventra_engine.exe --pack
 ```
 
 ---
 
 ## 🛠️ Panduan Pengembang (Build from Source)
 
-Jika Anda adalah seorang pengembang yang ingin mengompilasi biner sendiri:
+### Kebutuhan:
+- **Rust Toolchain**: 1.85+ (Edition 2021/2024), target `x86_64-pc-windows-msvc`.
+- **Git for Windows**.
 
 ### 1. Kloning Repositori
 ```powershell
@@ -277,53 +210,35 @@ git clone https://github.com/cybertank378/moodle_portable.git
 cd moodle_installer
 ```
 
-### 2. Rakit `payload.pak` Lengkap
+### 2. Kompilasi Release Binary
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build_payload.ps1
+cargo build --release --bin aksaventra_engine
 ```
-Skrip ini akan mengunduh paket resmi WNMP, menyusun konfigurasi `php.ini`, mengemas dependency resmi MariaDB MSI (`mariadb-13.0.2-winx64.msi`), memvalidasi 21 titik kelengkapan modul dan berkas, serta mengemasnya ke dalam wadah biner terenkripsi `payload.pak`.
+Biner hasil kompilasi akan berada di `target\x86_64-pc-windows-msvc\release\aksaventra_engine.exe`.
 
-### 3. Kompilasi Executable Rust
+### 3. Menjalankan Pengujian Unit
 ```powershell
-cargo build --release
+cargo test --bin aksaventra_engine
 ```
-Biner hasil kompilasi akan berada di: `target\x86_64-pc-windows-msvc\release\aksaventra_installer.exe`.
-
-### 4. Menjalankan Pengujian (Testing)
-```powershell
-cargo test
-```
-Seluruh 63 unit test dipastikan lulus 100% hijau.
+Seluruh 19 unit test dipastikan lulus 100% hijau.
 
 ---
 
 ## 📂 Struktur Kode Sumber & Lisensi
 
 ```text
-aksaventra_installer/
-├── scripts/
-│   ├── build_payload.ps1    # Skrip builder otomatis WNMP, audit kelengkapan, & generator .pak
-│   └── prune_moodle.ps1     # Skrip pembersih berkas non-esensial core engine
+moodle_installer/
 ├── src/
-│   ├── browser.rs           # Peluncur browser default otomatis
-│   ├── container.rs         # Wadah biner terenkripsi AKSA .pak & anti-tamper SHA-256
-│   ├── cron.rs              # In-process background cron job scheduler
-│   ├── database.rs          # MariaDB bootstrap, my.ini generator, & TCP probe
-│   ├── lib.rs               # Library root & embedded payload zip/pak extractor
-│   ├── lifecycle.rs         # Graceful shutdown manager (Ctrl+C signal handling)
-│   ├── main.rs              # Entry point CLI executable & startup orchestration
-│   ├── moodle.rs            # Unattended CLI installer & dynamic wwwroot patcher
-│   ├── network.rs           # Fast host LAN IP resolution & internet connection probe
-│   ├── paths.rs             # Unified installation & runtime paths management
-│   ├── payload.rs           # Dual-mode payload provisioning (online vs offline)
-│   ├── process.rs           # Win32 CREATE_NO_WINDOW silent process spawner
-│   ├── progress.rs          # Visual progress bar & CLI argument parsing
-│   ├── prune.rs             # Logika pemangkasan ukuran direktori core
-│   └── security.rs          # Sandbox runtime isolation & secure nginx.conf generator
-├── app_icon.ico             # Ikon biner resmi aplikasi Windows PE
-├── build.rs                 # Integrasi resource metadata Windows PE (winres)
-├── Cargo.toml               # Konfigurasi dependensi proyek Rust (zip, ctrlc, sha2)
-└── README.md                # Dokumentasi lengkap proyek
+│   ├── container.rs     # Brankas terenkripsi AES-256-GCM, ZstdMT, & Rayon parallel extraction
+│   ├── main.rs          # CLI entry point, startup orchestration, & graceful shutdown
+│   ├── network.rs       # Network port discovery & socket binding probe
+│   ├── paths.rs         # Path normalizer POSIX & portable dynamic configuration patcher
+│   ├── process.rs       # Headless daemon orchestrator (MariaDB, PHP FastCGI, Nginx)
+│   └── security.rs      # License verification (Online API & Offline Demo), HWID hashing
+├── Cargo.toml           # Konfigurasi dependensi Rust (tokio, rayon, zstd, aes-gcm, indicatif)
+├── aksaventra_vault.pak # Kontainer brankas data terenkripsi 
+├── serial_key.lic       # Berkas lisensi lokal
+└── README.md            # Dokumentasi lengkap
 ```
 
 ### Lisensi
