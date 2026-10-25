@@ -18,12 +18,13 @@ aes-gcm = "0.10"
 sha2 = "0.10"
 rand = "0.8"
 tar = "0.4"
-zstd = "0.13"
+zstd = { version = "0.13", features = ["zstdmt"] }
 walkdir = "2.5"
 machine-uid = "0.5"
 ctrlc = "3.4"
 indicatif = "0.17"
 console = "0.15"
+rayon = "1.10"
 winapi = { version = "0.3", features = ["fileapi", "winnt"] }
 
 [build-dependencies]

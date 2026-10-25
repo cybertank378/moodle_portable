@@ -1,6 +1,7 @@
 # Rust build artifacts
 /target
 Cargo.lock
+*.exe
 
 # Aksaventra Encrypted Vault & License
 *.pak
