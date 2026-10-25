@@ -16,6 +16,9 @@ Cargo.lock
 !/nginx/conf/nginx.conf
 !/nginx/conf/fastcgi_params
 !/nginx/conf/mime.types
+!/nginx/conf/sites-enabled/
+/nginx/conf/sites-enabled/*
+!/nginx/conf/sites-enabled/moodle.conf
 
 /php/*
 !/php/php.ini
