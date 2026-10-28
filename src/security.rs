@@ -1,4 +1,9 @@
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
 use anyhow::{anyhow, Context, Result};
+use rand::RngCore;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -14,10 +19,9 @@ pub const FALLBACK_VALIDATION_ENDPOINTS: [&str; 2] = [
 ];
 pub const SECRET_SALT: &str = "AKSAVENTRA_PORTABLE_CORE_2026_SALT";
 pub const LICENSE_FILENAME: &str = "serial_key.lic";
+pub const LOCAL_TOKEN_FILENAME: &str = "aksaventra.token";
 pub const LEGACY_LICENSE_FILENAME: &str = "aksaventra.lic";
-
-pub const DEMO_SERIAL_KEY: &str = "DEMO-AKSAVENTRA-2026";
-pub const DEMO_VAULT_SECRET: &str = "AKSAVENTRA_DEMO_SECRET_SEED_2026";
+pub const NONCE_SIZE: usize = 12;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct LicenseRequest {
@@ -33,6 +37,19 @@ pub struct LicenseResponse {
     pub message: String,
     pub client_name: Option<String>,
     pub vault_secret: Option<String>, // Seed rahasia untuk dekripsi vault
+    #[serde(default)]
+    pub expires_at: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct LocalLicenseToken {
+    pub serial_key: String,
+    pub hwid: String,
+    pub client_name: Option<String>,
+    pub vault_secret: String,
+    pub created_at: u64,
+    pub expires_at: Option<u64>,
+    pub signature: String,
 }
 
 #[allow(dead_code)]
@@ -57,11 +74,15 @@ impl SecurityManager {
         primary
     }
 
-    /// Menghapus berkas lisensi jika verifikasi gagal atau lisensi dicabut
+    /// Menghapus berkas lisensi dan token jika verifikasi gagal atau lisensi dicabut
     pub fn purge_license_files(base_dir: &Path) {
         let primary = base_dir.join(LICENSE_FILENAME);
         if primary.exists() {
             let _ = fs::remove_file(&primary);
+        }
+        let token_file = base_dir.join(LOCAL_TOKEN_FILENAME);
+        if token_file.exists() {
+            let _ = fs::remove_file(&token_file);
         }
         let legacy = base_dir.join(LEGACY_LICENSE_FILENAME);
         if legacy.exists() {
@@ -69,12 +90,100 @@ impl SecurityManager {
         }
     }
 
-    /// Menurunkan kunci AES-256 (32 byte) menggunakan SHA-256 dari seed server + salt
-    pub fn derive_key(server_seed: &str, salt: &str) -> [u8; 32] {
+    /// Menurunkan kunci AES-256 (32 byte) menggunakan SHA-256 dari seed + salt
+    pub fn derive_key(seed: &str, salt: &str) -> [u8; 32] {
         let mut hasher = Sha256::new();
-        hasher.update(server_seed.as_bytes());
+        hasher.update(seed.as_bytes());
         hasher.update(salt.as_bytes());
         hasher.finalize().into()
+    }
+
+    /// Menghitung tanda tangan (signature) token lisensi lokal untuk mencegah manipulasi
+    pub fn calculate_signature(serial_key: &str, hwid: &str, vault_secret: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(serial_key.as_bytes());
+        hasher.update(b":");
+        hasher.update(hwid.as_bytes());
+        hasher.update(b":");
+        hasher.update(vault_secret.as_bytes());
+        hasher.update(b":");
+        hasher.update(SECRET_SALT.as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
+
+    /// Menyimpan token lisensi terenkripsi ke media lokal (menggunakan kunci turunan HWID)
+    pub fn save_local_token(base_dir: &Path, token: &LocalLicenseToken) -> Result<()> {
+        let json_bytes = serde_json::to_vec(token)?;
+        let key = Self::derive_key(&token.hwid, SECRET_SALT);
+        let cipher = Aes256Gcm::new((&key).into());
+        let mut nonce_bytes = [0u8; NONCE_SIZE];
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let ciphertext = cipher
+            .encrypt(nonce, json_bytes.as_slice())
+            .map_err(|e| anyhow!("Gagal mengenkripsi token lokal: {:?}", e))?;
+
+        let mut file_payload = Vec::with_capacity(NONCE_SIZE + ciphertext.len());
+        file_payload.extend_from_slice(&nonce_bytes);
+        file_payload.extend_from_slice(&ciphertext);
+
+        let token_path = base_dir.join(LOCAL_TOKEN_FILENAME);
+        fs::write(token_path, file_payload)?;
+        Ok(())
+    }
+
+    /// Membaca dan memverifikasi token lisensi lokal (cek signature, HWID, dan masa berlaku)
+    pub fn read_and_verify_local_token(base_dir: &Path, current_hwid: &str) -> Result<LocalLicenseToken> {
+        let token_path = base_dir.join(LOCAL_TOKEN_FILENAME);
+        if !token_path.exists() {
+            return Err(anyhow!("Berkas token lisensi lokal ({}) tidak ditemukan", LOCAL_TOKEN_FILENAME));
+        }
+
+        let payload = fs::read(&token_path)?;
+        if payload.len() <= NONCE_SIZE {
+            return Err(anyhow!("Format berkas token lokal rusak atau tidak valid"));
+        }
+
+        let (nonce_bytes, ciphertext) = payload.split_at(NONCE_SIZE);
+        let key = Self::derive_key(current_hwid, SECRET_SALT);
+        let cipher = Aes256Gcm::new((&key).into());
+        let nonce = Nonce::from_slice(nonce_bytes);
+
+        let decrypted = cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|_| anyhow!("Dekripsi token lokal gagal (Hardware ID perangkat tidak cocok)"))?;
+
+        let token: LocalLicenseToken = serde_json::from_slice(&decrypted)
+            .context("Format data lisensi lokal rusak atau tidak valid")?;
+
+        // 1. Verifikasi kecocokan Hardware ID
+        if token.hwid != current_hwid {
+            return Err(anyhow!(
+                "Hardware Mismatch: HWID token ({}) berbeda dengan perangkat lokal ({})",
+                token.hwid,
+                current_hwid
+            ));
+        }
+
+        // 2. Verifikasi Tanda Tangan (Integrity Check)
+        let expected_signature = Self::calculate_signature(&token.serial_key, &token.hwid, &token.vault_secret);
+        if token.signature != expected_signature {
+            return Err(anyhow!("Tanda tangan (signature) token lisensi lokal tidak valid (data telah dimodifikasi)"));
+        }
+
+        // 3. Verifikasi Waktu Kadaluarsa
+        if let Some(exp) = token.expires_at {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            if now > exp {
+                return Err(anyhow!("Masa berlaku lisensi lokal telah kadaluarsa"));
+            }
+        }
+
+        Ok(token)
     }
 
     /// Mendapatkan Hardware ID unik perangkat lokal
@@ -82,58 +191,64 @@ impl SecurityManager {
         machine_uid::get().unwrap_or_else(|_| "UNKNOWN-HWID-FALLBACK".to_string())
     }
 
-    /// Mengecek apakah serial key merupakan lisensi demo/trial
-    pub fn is_demo_license(serial_key: &str) -> bool {
-        let upper = serial_key.trim().to_uppercase();
-        upper.starts_with("DEMO") || upper.contains("DEMO") || upper == "TRIAL"
-    }
-
-    /// Melakukan autentikasi lisensi ke server aksaventra.ai.id atau validasi lisensi demo lokal
+    /// Alur autentikasi lengkap sesuai diagram alir Aksaventra Engine & Server
     pub async fn authenticate(base_dir: &Path) -> Result<Self> {
-        let license_file = Self::resolve_license_path(base_dir);
+        // 1. Baca Machine ID / HWID
         let hwid = Self::get_hardware_id();
+        println!("[AKSAVENTRA] Machine ID (HWID): {}", hwid);
 
+        // 2. Cek File Lisensi Lokal (Token Terenkripsi)
+        let token_path = base_dir.join(LOCAL_TOKEN_FILENAME);
+        if token_path.exists() {
+            println!("[AKSAVENTRA] Berkas Lisensi Lokal Ditemukan ({})", LOCAL_TOKEN_FILENAME);
+            match Self::read_and_verify_local_token(base_dir, &hwid) {
+                Ok(cached_token) => {
+                    println!("[AKSAVENTRA] Verifikasi Signature & HWID Lokal: Valid (Offline/Cached Mode).");
+                    println!(
+                        "[AKSAVENTRA] Lisensi Aktif: {} (Terdaftar atas nama: {})",
+                        cached_token.serial_key,
+                        cached_token.client_name.as_deref().unwrap_or("Pengguna Aksaventra")
+                    );
+                    let encryption_key = Self::derive_key(&cached_token.vault_secret, SECRET_SALT);
+                    return Ok(Self {
+                        serial_key: cached_token.serial_key,
+                        hwid,
+                        encryption_key,
+                    });
+                }
+                Err(err) => {
+                    println!("[AKSAVENTRA] Lisensi lokal tidak valid / butuh re-connect ({})", err);
+                }
+            }
+        }
+
+        // 3. Prompt Input Serial Key dan / atau baca dari berkas serial_key.lic
+        let license_file = Self::resolve_license_path(base_dir);
         let serial_key = if license_file.exists() {
             let content = fs::read_to_string(&license_file)?.trim().to_string();
             if content.is_empty() {
-                Self::prompt_or_demo_license(&license_file)?
+                Self::prompt_serial_key(&license_file)?
             } else {
                 content
             }
         } else {
-            Self::prompt_or_demo_license(&license_file)?
+            Self::prompt_serial_key(&license_file)?
         };
 
         if serial_key.is_empty() {
             Self::purge_license_files(base_dir);
-            return Err(anyhow!("Serial Key tidak boleh kosong."));
+            return Err(anyhow!(
+                "Serial Key tidak boleh kosong. Silakan peroleh lisensi resmi di https://aksaventra.ai.id"
+            ));
         }
 
-        // 1. Dukungan Lisensi Demo / Trial (Bypass validasi remote untuk keperluan evaluasi/pengujian)
-        if Self::is_demo_license(&serial_key) {
-            println!("[AKSAVENTRA] =================================================");
-            println!("[AKSAVENTRA] Menggunakan Lisensi DEMO / TRIAL (Mode Evaluasi)");
-            println!("[AKSAVENTRA] Serial Key     : {}", serial_key);
-            println!("[AKSAVENTRA] HWID Perangkat : {}", hwid);
-            println!("[AKSAVENTRA] Status Lisensi : Aktif (Demo Terverifikasi)");
-            println!("[AKSAVENTRA] Terdaftar atas : Pengguna Demo Aksaventra");
-            println!("[AKSAVENTRA] =================================================");
-
-            let encryption_key = Self::derive_key(DEMO_VAULT_SECRET, SECRET_SALT);
-            return Ok(Self {
-                serial_key,
-                hwid,
-                encryption_key,
-            });
-        }
-
+        // 4. POST Request (Serial Key + HWID) ke API Endpoint
         let custom_endpoint = std::env::var("AKSAVENTRA_API_URL").ok();
         let target_endpoint = custom_endpoint
             .as_deref()
             .unwrap_or(PRIMARY_VALIDATION_ENDPOINT);
 
-        println!("[AKSAVENTRA] Memvalidasi lisensi ke {}...", target_endpoint);
-        println!("[AKSAVENTRA] Perangkat HWID: {}", hwid);
+        println!("[AKSAVENTRA] Menghubungi Server Lisensi {}...", target_endpoint);
 
         let client = Client::builder()
             .timeout(Duration::from_secs(15))
@@ -145,7 +260,6 @@ impl SecurityManager {
             engine_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         };
 
-        // Kirim request ke endpoint validasi utama, jika gagal/404 coba endpoint fallback
         let mut response = client.post(target_endpoint).json(&payload).send().await;
 
         if custom_endpoint.is_none() {
@@ -163,14 +277,36 @@ impl SecurityManager {
         }
 
         let response = response.context(
-            "Gagal terhubung ke server lisensi aksaventra.ai.id. Pastikan koneksi internet aktif.",
+            "Gagal terhubung ke server lisensi aksaventra.ai.id. Pastikan koneksi internet aktif untuk aktivasi pertama kali.",
         )?;
 
-        if !response.status().is_success() {
+        let status = response.status();
+
+        // 5. Evaluasi Status Respon Server Sesuai Diagram
+        if status.as_u16() == 403 {
+            Self::purge_license_files(base_dir);
+            return Err(anyhow!(
+                "[AKSAVENTRA ERROR] Validasi Gagal (HTTP 403: Hardware Mismatch).\n\
+                 Serial Key ini telah terkunci pada perangkat keras (HWID) lain.\n\
+                 Silakan hubungi administrator di https://aksaventra.ai.id untuk mereset perangkat terdaftar."
+            ));
+        }
+
+        if status.as_u16() == 401 || status.as_u16() == 404 {
+            Self::purge_license_files(base_dir);
+            return Err(anyhow!(
+                "[AKSAVENTRA ERROR] Validasi Gagal (HTTP {}: Lisensi Ditolak).\n\
+                 Serial Key tidak ditemukan, kadaluarsa, atau dinonaktifkan.\n\
+                 Silakan periksa kembali lisensi Anda di https://aksaventra.ai.id",
+                status.as_u16()
+            ));
+        }
+
+        if !status.is_success() {
             Self::purge_license_files(base_dir);
             return Err(anyhow!(
                 "Validasi lisensi ditolak oleh server aksaventra.ai.id (HTTP {}).",
-                response.status()
+                status
             ));
         }
 
@@ -181,19 +317,41 @@ impl SecurityManager {
 
         if !result.valid {
             Self::purge_license_files(base_dir);
-            return Err(anyhow!("Lisensi Tidak Valid: {}", result.message));
+            return Err(anyhow!("Lisensi Ditolak: {}", result.message));
         }
 
         println!(
-            "[AKSAVENTRA] Lisensi Terverifikasi! Terdaftar atas nama: {}",
+            "[AKSAVENTRA] Lisensi Terverifikasi (200 OK)! Terdaftar atas nama: {}",
             result.client_name.as_deref().unwrap_or("Pengguna Aksaventra")
         );
 
-        // Turunkan kunci AES-256 (32 byte) dari vault_secret server + salt rahasia
-        let server_secret = result
+        let vault_secret = result
             .vault_secret
             .unwrap_or_else(|| "DEFAULT_VAULT_PASSPHRASE".to_string());
-        let encryption_key = Self::derive_key(&server_secret, SECRET_SALT);
+
+        // 6. Simpan File Lisensi Terenkripsi Lokal (Signed Token)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let signature = Self::calculate_signature(&serial_key, &hwid, &vault_secret);
+        let local_token = LocalLicenseToken {
+            serial_key: serial_key.clone(),
+            hwid: hwid.clone(),
+            client_name: result.client_name.clone(),
+            vault_secret: vault_secret.clone(),
+            created_at: now,
+            expires_at: result.expires_at,
+            signature,
+        };
+
+        if let Err(e) = Self::save_local_token(base_dir, &local_token) {
+            eprintln!("[AKSAVENTRA WARNING] Gagal menyimpan cache token lisensi lokal: {}", e);
+        } else {
+            println!("[AKSAVENTRA] Berkas Lisensi Terenkripsi Lokal Berhasil Disimpan ({})", LOCAL_TOKEN_FILENAME);
+        }
+
+        let encryption_key = Self::derive_key(&vault_secret, SECRET_SALT);
 
         Ok(Self {
             serial_key,
@@ -202,27 +360,20 @@ impl SecurityManager {
         })
     }
 
-    /// Meminta input Serial Key dari pengguna di terminal atau menggunakan demo license
-    pub fn prompt_or_demo_license(target_path: &Path) -> Result<String> {
-        print!("[AKSAVENTRA] Masukkan Serial Key Anda (tekan ENTER untuk Lisensi Demo): ");
+    /// Meminta input Serial Key dari pengguna di terminal
+    pub fn prompt_serial_key(target_path: &Path) -> Result<String> {
+        print!("[AKSAVENTRA] Masukkan Serial Key Anda: ");
         io::stdout().flush()?;
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
         let key = input.trim().to_string();
-        let final_key = if key.is_empty() {
-            println!("[AKSAVENTRA] Membuat berkas lisensi demo otomatis ({})", DEMO_SERIAL_KEY);
-            DEMO_SERIAL_KEY.to_string()
-        } else {
-            key
-        };
-        fs::write(target_path, &final_key)?;
-        Ok(final_key)
-    }
-
-    /// Alias kompatibilitas ke prompt_or_demo_license
-    #[allow(dead_code)]
-    pub fn prompt_serial_key(target_path: &Path) -> Result<String> {
-        Self::prompt_or_demo_license(target_path)
+        if key.is_empty() {
+            return Err(anyhow!(
+                "Serial Key tidak boleh kosong. Silakan peroleh lisensi resmi di https://aksaventra.ai.id"
+            ));
+        }
+        fs::write(target_path, &key)?;
+        Ok(key)
     }
 }
 
@@ -261,7 +412,8 @@ mod tests {
             "valid": true,
             "message": "Lisensi aktif",
             "client_name": "Universitas Aksaventra",
-            "vault_secret": "TOP_SECRET_SEED_2026"
+            "vault_secret": "TOP_SECRET_SEED_2026",
+            "expires_at": 1893456000
         }"#;
 
         let res: LicenseResponse = serde_json::from_str(json).expect("Harus dapat di-deserialize");
@@ -269,44 +421,74 @@ mod tests {
         assert_eq!(res.message, "Lisensi aktif");
         assert_eq!(res.client_name.as_deref(), Some("Universitas Aksaventra"));
         assert_eq!(res.vault_secret.as_deref(), Some("TOP_SECRET_SEED_2026"));
+        assert_eq!(res.expires_at, Some(1893456000));
     }
 
     #[test]
-    fn test_resolve_and_purge_license_path() {
-        let temp_dir = std::env::temp_dir().join(format!("aksaventra_lic_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    fn test_local_token_encryption_decryption_and_tamper_detection() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "aksaventra_token_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         fs::create_dir_all(&temp_dir).unwrap();
 
-        let lic_file = temp_dir.join(LICENSE_FILENAME);
-        fs::write(&lic_file, "TEST-KEY").unwrap();
+        let hwid_a = "HWID-DEVICE-AAA";
+        let hwid_b = "HWID-DEVICE-BBB";
+        let serial = "AKSA-PROD-2026";
+        let secret = "SECRET_SEED_VAL";
 
-        assert_eq!(SecurityManager::resolve_license_path(&temp_dir), lic_file);
+        let signature = SecurityManager::calculate_signature(serial, hwid_a, secret);
+        let token = LocalLicenseToken {
+            serial_key: serial.to_string(),
+            hwid: hwid_a.to_string(),
+            client_name: Some("Klien Demo".to_string()),
+            vault_secret: secret.to_string(),
+            created_at: 1000,
+            expires_at: None,
+            signature,
+        };
 
-        SecurityManager::purge_license_files(&temp_dir);
-        assert!(!lic_file.exists(), "Berkas lisensi harus terhapus setelah purge");
+        // 1. Simpan token lokal
+        SecurityManager::save_local_token(&temp_dir, &token).expect("Harus dapat menyimpan token");
+
+        // 2. Baca dengan HWID yang cocok -> Harus sukses
+        let read_token = SecurityManager::read_and_verify_local_token(&temp_dir, hwid_a)
+            .expect("Harus dapat membaca dan memverifikasi token yang valid");
+        assert_eq!(read_token.serial_key, serial);
+        assert_eq!(read_token.hwid, hwid_a);
+        assert_eq!(read_token.vault_secret, secret);
+
+        // 3. Baca dengan HWID yang berbeda -> Harus gagal (Hardware Mismatch)
+        let mismatch_res = SecurityManager::read_and_verify_local_token(&temp_dir, hwid_b);
+        assert!(mismatch_res.is_err(), "HWID yang berbeda harus ditolak");
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
-    fn test_is_demo_license() {
-        assert!(SecurityManager::is_demo_license("DEMO-AKSAVENTRA-2026"));
-        assert!(SecurityManager::is_demo_license("demo-1234"));
-        assert!(SecurityManager::is_demo_license("AKSAVENTRA-DEMO"));
-        assert!(SecurityManager::is_demo_license("trial"));
-        assert!(!SecurityManager::is_demo_license("AKSA-PROD-9999"));
-    }
-
-    #[tokio::test]
-    async fn test_demo_license_authentication_offline() {
-        let temp_dir = std::env::temp_dir().join(format!("aksaventra_demo_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    fn test_resolve_and_purge_license_path() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "aksaventra_lic_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         fs::create_dir_all(&temp_dir).unwrap();
 
         let lic_file = temp_dir.join(LICENSE_FILENAME);
-        fs::write(&lic_file, DEMO_SERIAL_KEY).unwrap();
+        let token_file = temp_dir.join(LOCAL_TOKEN_FILENAME);
+        fs::write(&lic_file, "TEST-KEY").unwrap();
+        fs::write(&token_file, "TOKEN-DATA").unwrap();
 
-        let auth = SecurityManager::authenticate(&temp_dir).await.expect("Demo auth harus berhasil");
-        assert_eq!(auth.serial_key, DEMO_SERIAL_KEY);
-        assert_eq!(auth.encryption_key, SecurityManager::derive_key(DEMO_VAULT_SECRET, SECRET_SALT));
+        assert_eq!(SecurityManager::resolve_license_path(&temp_dir), lic_file);
+
+        SecurityManager::purge_license_files(&temp_dir);
+        assert!(!lic_file.exists(), "Berkas serial_key.lic harus terhapus setelah purge");
+        assert!(!token_file.exists(), "Berkas aksaventra.token harus terhapus setelah purge");
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

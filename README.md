@@ -20,7 +20,7 @@ Anda **tidak perlu menginstal XAMPP, WampServer, Docker, atau software pihak ket
    - [Langkah 3: Jalankan `aksaventra_engine.exe`](#langkah-3-jalankan-aksaventra_engineexe)
    - [Langkah 4: Akses LMS Melalui Browser](#langkah-4-akses-lms-melalui-browser)
    - [Langkah 5: Cara Menutup Aplikasi dengan Aman](#langkah-5-cara-menutup-aplikasi-dengan-aman)
-2. [Sistem Lisensi & Mode Demo](#-sistem-lisensi--mode-demo)
+2. [Sistem Lisensi & Hardware ID (HWID)](#-sistem-lisensi--hardware-id-hwid)
 3. [Arsitektur & Keunggulan Akselerasi v2.0](#-arsitektur--keunggulan-akselerasi-v20)
 4. [Akses Multi-Perangkat (HP / Laptop Siswa via Wi-Fi/LAN)](#-akses-multi-perangkat-hp--laptop-siswa-via-wi-filan)
 5. [Portabilitas & Pencadangan (Backup ke Flashdisk)](#-portabilitas--pencadangan-backup-ke-flashdisk)
@@ -42,7 +42,7 @@ Kunjungi halaman rilis resmi kami di GitHub:
 Paket distribusi mencakup:
 - 🚀 **`aksaventra_engine.exe`** (Engine peluncur mandiri berbasis Rust)
 - 📦 **`aksaventra_vault.pak`** (Kontainer brankas terenkripsi AES-256-GCM + ZstdMT)
-- 🔑 **`serial_key.lic`** (Berkas lisensi perangkat / evaluasi demo)
+- 🔑 **`serial_key.lic`** (Berkas lisensi resmi perangkat Anda)
 
 ---
 
@@ -70,9 +70,10 @@ AksaventraLMS/
           AKSAVENTRA PORTABLE ENGINE v2.0             
        Powered by Rust | aksaventra.ai.id             
 ======================================================
-[AKSAVENTRA] Menggunakan Lisensi DEMO / TRIAL (Mode Evaluasi)
-[AKSAVENTRA] Serial Key     : DEMO-AKSAVENTRA-2026
-[AKSAVENTRA] Status Lisensi : Aktif (Demo Terverifikasi)
+[AKSAVENTRA] Machine ID (HWID): 4a12...89ef
+[AKSAVENTRA] Berkas Lisensi Lokal Ditemukan (aksaventra.token)
+[AKSAVENTRA] Verifikasi Signature & HWID Lokal: Valid (Offline/Cached Mode).
+[AKSAVENTRA] Lisensi Aktif: AKSA-XXXX-YYYY (Terdaftar atas nama: Universitas Aksaventra)
 [VAULT] Membuka enkripsi kontainer aplikasi dan mengekstrak komponen...
 [UNSEAL] [00:00:15] [########################################] 30904/30904 (100%) ETA: 00:00:00 | Selesai mengekstrak seluruh berkas.
 [ENGINE] Menyalakan MariaDB Database Server (Port 3306)...
@@ -122,19 +123,18 @@ Untuk menjaga agar data ujian, materi, dan database tidak rusak atau korup:
 
 ---
 
-## 🔑 Sistem Lisensi & Mode Demo
+## 🔑 Sistem Lisensi & Hardware ID (HWID)
 
-Aksaventra Engine v2.0 dilengkapi dengan sistem otentikasi lisensi berbasis cryptographic signature dan Hardware ID (HWID):
+Aksaventra Engine v2.0 dilengkapi dengan sistem otentikasi lisensi terikat perangkat keras (*hardware-locked*) dan penandatanganan kriptografis (*signed token*):
 
-1. **Lisensi Produksi (Online)**:
-   - Menghubungkan Serial Key dengan HWID perangkat via server `https://aksaventra.ai.id/api/license/verify`.
-   - Mengunduh kunci enkripsi brankas yang diikat khusus untuk perangkat Anda.
-2. **Mode Demo / Trial (Offline)**:
-   - Berkas `serial_key.lic` bawaan berisi kunci demo:
-     ```text
-     DEMO-AKSAVENTRA-2026
-     ```
-   - Berfungsi 100% secara offline tanpa memerlukan sambungan internet untuk keperluan pengujian dan evaluasi mandiri.
+1. **Aktivasi Pertama Kali (Online Handshake)**:
+   - Serial Key diverifikasi bersama Machine ID / Hardware ID (`HWID`) unik perangkat ke endpoint `https://aksaventra.ai.id/api/v1/validate`.
+   - Server mengunci HWID ke Serial Key di database dan mengembalikan respon berlisensi (*signed response*).
+   - Engine secara otomatis membuat berkas token terenkripsi lokal **`aksaventra.token`** yang dienkripsi menggunakan AES-256-GCM berbasis HWID perangkat.
+
+2. **Eksekusi Mandiri (Offline / Cached Mode)**:
+   - Pada peluncuran berikutnya, engine membaca `aksaventra.token` lokal, mendekripsi, dan memverifikasi integritas *digital signature* serta kecocokan HWID perangkat tanpa perlu selalu terhubung ke internet.
+   - Jika berkas dipindahkan ke komputer lain, engine mendeteksi *Hardware Mismatch* (HTTP 403) dan menolak membuka brankas untuk melindungi hak cipta dan keamanan instansi.
 
 ---
 
@@ -234,10 +234,10 @@ moodle_installer/
 │   ├── network.rs       # Network port discovery & socket binding probe
 │   ├── paths.rs         # Path normalizer POSIX & portable dynamic configuration patcher
 │   ├── process.rs       # Headless daemon orchestrator (MariaDB, PHP FastCGI, Nginx)
-│   └── security.rs      # License verification (Online API & Offline Demo), HWID hashing
+│   └── security.rs      # License verification (Online API & Signed Local Token), HWID binding
 ├── Cargo.toml           # Konfigurasi dependensi Rust (tokio, rayon, zstd, aes-gcm, indicatif)
 ├── aksaventra_vault.pak # Kontainer brankas data terenkripsi 
-├── serial_key.lic       # Berkas lisensi lokal
+├── serial_key.lic       # Berkas lisensi resmi
 └── README.md            # Dokumentasi lengkap
 ```
 

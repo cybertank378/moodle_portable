@@ -70,7 +70,7 @@ async fn main() -> Result<()> {
     if paths.vault_file.exists() {
         VaultContainer::unseal_folders(&paths.vault_file, &paths.runtime_dir, &security.encryption_key)?;
     } else if paths.nginx_dir.exists() {
-        println!("[ENGINE] Menjalankan dalam mode folder langsung (Development / Demo Mode)...");
+        println!("[ENGINE] Menjalankan dalam mode folder langsung (Development Mode)...");
     } else {
         return Err(anyhow::anyhow!(
             "Berkas brankas {:?} tidak ditemukan dan folder layanan tidak tersedia di direktori aplikasi.",
