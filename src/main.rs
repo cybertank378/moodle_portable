@@ -1,4 +1,5 @@
 mod container;
+mod hardware;
 mod network;
 mod paths;
 mod process;
@@ -17,14 +18,16 @@ use std::time::Duration;
 const DEFAULT_PORT: u16 = 8080;
 
 fn print_help() {
-    println!("Aksaventra Encrypted Portable Moodle Engine v2.0");
+    println!("Aksaventra Encrypted Portable Moodle Engine v{}", env!("CARGO_PKG_VERSION"));
     println!("Penggunaan: aksaventra_engine.exe [PILIHAN]");
     println!();
     println!("Pilihan:");
-    println!("  --encrypt, --pack          Kemas folder mentah ke dalam brankas terenkripsi (.pak)");
-    println!("  -p, --port <PORT>          Tentukan port lokal khusus (default: 8080)");
-    println!("  --skip-browser             Jangan buka peramban secara otomatis");
-    println!("  -h, --help                 Tampilkan bantuan ini");
+    println!("  -c, --concurrency, --workers <N>   Jumlah worker PHP FastCGI (default: auto rekomendasi hardware)");
+    println!("  --profile <PROFIL>                 Profil performa: eco | normal | high | extreme");
+    println!("  -p, --port <PORT>                  Tentukan port lokal khusus (default: 8080)");
+    println!("  --encrypt, --pack                  Kemas folder mentah ke dalam brankas terenkripsi (.pak)");
+    println!("  --skip-browser                     Jangan buka peramban secara otomatis");
+    println!("  -h, --help                         Tampilkan bantuan ini");
 }
 
 #[tokio::main]
@@ -66,7 +69,36 @@ async fn main() -> Result<()> {
     }
     let app_port = network::find_available_port(preferred_port);
 
-    // 3. Dekripsi folder runtime dari aksaventra_vault.pak jika ada
+    // 3. Deteksi Hardware & Tentukan Profil Konfigurasi Performa SEBELUM Unpack/Jalankan
+    let hw_specs = hardware::detect_hardware();
+    println!("[HARDWARE] Deteksi Spesifikasi Host : {} Core CPU | {:.1} GB Total RAM", hw_specs.cpu_cores, hw_specs.total_ram_gb);
+
+    let active_profile = if let Some(pos) = args.iter().position(|a| a == "-c" || a == "--concurrency" || a == "--workers") {
+        if let Some(val) = args.get(pos + 1).and_then(|v| v.parse::<u32>().ok()) {
+            hardware::custom_profile(val)
+        } else {
+            hardware::recommend_profile(&hw_specs)
+        }
+    } else if let Some(pos) = args.iter().position(|a| a == "--profile") {
+        if let Some(val) = args.get(pos + 1) {
+            hardware::profile_from_name(val).unwrap_or_else(|| hardware::recommend_profile(&hw_specs))
+        } else {
+            hardware::recommend_profile(&hw_specs)
+        }
+    } else if let Ok(val) = env::var("AKSAVENTRA_CONCURRENCY").and_then(|v| v.parse::<u32>().map_err(|_| env::VarError::NotPresent)) {
+        hardware::custom_profile(val)
+    } else {
+        // Otomatis tentukan profil terbaik berdasarkan hardware aktif
+        hardware::recommend_profile(&hw_specs)
+    };
+
+    println!("[TUNING] Profil Performa Terpilih   : {}", active_profile.name);
+    println!("  * PHP FastCGI Worker Pool       : {} Workers", active_profile.workers);
+    println!("  * MariaDB InnoDB Buffer Pool    : {}", active_profile.buffer_pool);
+    println!("  * Nginx Worker Connections      : {}", active_profile.nginx_connections);
+    println!("  * Estimasi Daya Tampung CBT     : {}", active_profile.estimated_cbt_users);
+
+    // 4. Dekripsi folder runtime dari aksaventra_vault.pak jika ada
     if paths.vault_file.exists() {
         VaultContainer::unseal_folders(&paths.vault_file, &paths.runtime_dir, &security.encryption_key)?;
     } else if paths.nginx_dir.exists() {
@@ -78,14 +110,14 @@ async fn main() -> Result<()> {
         ));
     }
 
-    // 4. Re-konfigurasi path secara dinamis agar 100% portabel
-    paths.patch_portable_configs(app_port)?;
+    // 5. Re-konfigurasi path dan kapasitas konkurensi secara dinamis
+    paths.patch_portable_configs(app_port, &active_profile)?;
 
-    // 5. Jalankan MariaDB, PHP-CGI, dan Nginx secara headless
+    // 6. Jalankan MariaDB, PHP-CGI, dan Nginx secara headless
     let mut services = ServiceOrchestrator::new();
-    services.start_all(&paths, app_port)?;
+    services.start_all(&paths, app_port, &active_profile)?;
 
-    // 6. Buka aplikasi di peramban (browser) default
+    // 7. Buka aplikasi di peramban (browser) default
     let active_ip = network::get_active_local_ip();
     let local_url = format!("http://localhost:{}", app_port);
     let lan_url = format!("http://{}:{}", active_ip, app_port);
@@ -96,7 +128,8 @@ async fn main() -> Result<()> {
     if active_ip != "127.0.0.1" {
         println!("  Akses Jaringan (Wi-Fi/LAN)  : {}", lan_url);
     }
-    println!("  Status Layanan              : MariaDB, PHP FastCGI (16 Workers), Nginx");
+    println!("  Status Layanan              : MariaDB ({}), PHP ({} Workers), Nginx", active_profile.buffer_pool, active_profile.workers);
+    println!("  Profil / Kapasitas CBT      : {} ({})", active_profile.name, active_profile.estimated_cbt_users);
     println!("======================================================");
     println!("  Tekan Ctrl+C untuk menutup dan mengamankan data.     ");
     println!("======================================================");

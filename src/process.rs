@@ -104,7 +104,7 @@ impl ServiceOrchestrator {
     }
 
     /// Menjalankan MariaDB, PHP-CGI, dan Nginx secara berurutan dan headless
-    pub fn start_all(&mut self, paths: &PortablePaths, app_port: u16) -> Result<()> {
+    pub fn start_all(&mut self, paths: &PortablePaths, app_port: u16, profile: &crate::hardware::HardwareProfile) -> Result<()> {
         // 1. Jalankan MariaDB Server
         println!("[ENGINE] Menyalakan MariaDB Database Server (Port {})...", DB_PORT);
         let mysqld_bin = paths.mariadb_dir.join("bin").join("mysqld.exe");
@@ -137,8 +137,8 @@ impl ServiceOrchestrator {
         // Pastikan database moodle otomatis dibuat
         Self::ensure_moodle_database(&paths.mariadb_dir, DB_PORT)?;
 
-        // 2. Jalankan PHP FastCGI
-        println!("[ENGINE] Menyalakan PHP FastCGI (Port {})...", PHP_PORT);
+        // 2. Jalankan PHP FastCGI dengan pool worker dinamis sesuai profil
+        println!("[ENGINE] Menyalakan PHP FastCGI (Port {}, {} Workers - {})...", PHP_PORT, profile.workers, profile.name);
         let php_cgi_bin = paths.php_dir.join("php-cgi.exe");
         let php_ini = paths.php_dir.join("php.ini");
 
@@ -150,7 +150,7 @@ impl ServiceOrchestrator {
         self.php_proc = Some(
             Command::new(&php_cgi_bin)
                 .args(["-b", &format!("127.0.0.1:{}", PHP_PORT), "-c", &php_ini.to_string_lossy()])
-                .env("PHP_FCGI_CHILDREN", "16")
+                .env("PHP_FCGI_CHILDREN", profile.workers.to_string())
                 .env("PHP_FCGI_MAX_REQUESTS", "10000")
                 .current_dir(&paths.php_dir)
                 .stdout(Stdio::null())

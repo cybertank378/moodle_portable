@@ -191,14 +191,25 @@ Aksaventra Engine v2.2 dilengkapi dengan sistem otentikasi lisensi terikat peran
 Penggunaan: aksaventra_engine.exe [PILIHAN]
 
 Pilihan:
-  --encrypt, --pack          Kemas folder mentah ke dalam brankas terenkripsi (.pak)
-  -p, --port <PORT>          Tentukan port lokal khusus (default: 8080)
-  --skip-browser             Jangan buka peramban secara otomatis
-  -h, --help                 Tampilkan bantuan ini
+  -c, --concurrency, --workers <N>   Jumlah worker PHP FastCGI (default: auto rekomendasi hardware)
+  --profile <PROFIL>                 Profil performa: eco | normal | high | extreme
+  -p, --port <PORT>                  Tentukan port lokal khusus (default: 8080)
+  --encrypt, --pack                  Kemas folder mentah ke dalam brankas terenkripsi (.pak)
+  --skip-browser                     Jangan buka peramban secara otomatis
+  -h, --help                         Tampilkan bantuan ini
 ```
 
 Contoh:
 ```powershell
+# Menjalankan dengan profiling otomatis mendeteksi RAM & CPU komputer host (Default):
+.\aksaventra_engine.exe
+
+# Mengoptimalkan untuk Ujian Akbar (profil High Performance / 32 workers):
+.\aksaventra_engine.exe --profile high
+
+# Menentukan jumlah worker eksplisit (misal 48 worker PHP FastCGI):
+.\aksaventra_engine.exe -c 48
+
 # Menjalankan pada port khusus 8888 tanpa membuka browser otomatis:
 .\aksaventra_engine.exe -p 8888 --skip-browser
 
@@ -230,7 +241,7 @@ Biner hasil kompilasi akan berada di `target\x86_64-pc-windows-msvc\release\aksa
 ```powershell
 cargo test --bin aksaventra_engine
 ```
-Seluruh 18 unit test dipastikan lulus 100% hijau.
+Seluruh 22 unit test dipastikan lulus 100% hijau.
 
 ---
 
@@ -240,6 +251,7 @@ Seluruh 18 unit test dipastikan lulus 100% hijau.
 moodle_installer/
 ├── src/
 │   ├── container.rs     # Brankas terenkripsi AES-256-GCM, ZstdMT, & Rayon parallel extraction
+│   ├── hardware.rs      # Deteksi spesifikasi host (CPU/RAM) & dynamic concurrency profiling
 │   ├── main.rs          # CLI entry point, startup orchestration, & graceful shutdown
 │   ├── network.rs       # Network port discovery & socket binding probe
 │   ├── paths.rs         # Path normalizer POSIX & portable dynamic configuration patcher

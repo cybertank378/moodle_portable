@@ -66,7 +66,7 @@ impl PortablePaths {
     }
 
     /// Menulis ulang konfigurasi agar selalu portabel di komputer/drive mana pun
-    pub fn patch_portable_configs(&self, port: u16) -> Result<()> {
+    pub fn patch_portable_configs(&self, port: u16, profile: &crate::hardware::HardwareProfile) -> Result<()> {
         let moodle_posix = Self::to_posix_path(&self.moodle_dir);
         let mariadb_posix = Self::to_posix_path(&self.mariadb_dir);
 
@@ -82,11 +82,13 @@ impl PortablePaths {
             bind-address=127.0.0.1\n\
             character-set-server=utf8mb4\n\
             collation-server=utf8mb4_unicode_ci\n\
-            innodb_buffer_pool_size=256M\n\
-            max_connections=250\n\
+            innodb_buffer_pool_size={}\n\
+            max_connections={}\n\
             max_allowed_packet=64M\n\
             connect_timeout=30\n\
-            wait_timeout=600\n"
+            wait_timeout=600\n",
+            profile.buffer_pool,
+            profile.max_connections
         );
         fs::write(&my_ini_path, my_ini_content)?;
 
@@ -188,6 +190,7 @@ impl PortablePaths {
         fs::write(&moodle_vhost_path, moodle_vhost)?;
 
         // 3b. Tulis konfigurasi utama Nginx dengan worker pool dan buffer optimal untuk mencegah 503
+        let nginx_connections = profile.nginx_connections;
         let nginx_conf_path = conf_dir.join("nginx.conf");
         let nginx_conf = format!(
             "worker_processes 1;\n\
@@ -195,7 +198,7 @@ impl PortablePaths {
             pid logs/nginx.pid;\n\
             \n\
             events {{\n\
-                worker_connections 2048;\n\
+                worker_connections {nginx_connections};\n\
             }}\n\
             \n\
             http {{\n\
@@ -313,14 +316,18 @@ mod tests {
         )
         .unwrap();
 
-        // Jalankan patching pada port 9090
+        // Jalankan patching pada port 9090 dengan concurrency default 16
+        // Jalankan patching pada port 9090 dengan profil Balanced (16 workers)
+        let profile_balanced = crate::hardware::custom_profile(16);
         paths
-            .patch_portable_configs(9090)
+            .patch_portable_configs(9090, &profile_balanced)
             .expect("patching harus berhasil");
 
         // 1. Verifikasi MariaDB my.ini
         let my_ini = fs::read_to_string(paths.mariadb_dir.join("data").join("my.ini")).unwrap();
         assert!(my_ini.contains("port=3306"));
+        assert!(my_ini.contains("max_connections=250"));
+        assert!(my_ini.contains("innodb_buffer_pool_size=256M"));
         let maria_posix = PortablePaths::to_posix_path(&paths.mariadb_dir);
         assert!(my_ini.contains(&format!("basedir=\"{}\"", maria_posix)));
 
@@ -334,6 +341,7 @@ mod tests {
         // 3. Verifikasi Nginx nginx.conf & sites-enabled/moodle.conf
         let nginx_conf =
             fs::read_to_string(paths.nginx_dir.join("conf").join("nginx.conf")).unwrap();
+        assert!(nginx_conf.contains("worker_connections 2048;"));
         let nginx_posix = PortablePaths::to_posix_path(&paths.nginx_dir);
         assert!(nginx_conf.contains(&format!(
             "include \"{}/conf/sites-enabled/*.conf\";",
@@ -356,6 +364,17 @@ mod tests {
         let moodle_cfg = fs::read_to_string(paths.moodle_dir.join("config.php")).unwrap();
         assert!(moodle_cfg.contains("$CFG->wwwroot") && moodle_cfg.contains(":9090"));
         assert!(moodle_cfg.contains("$CFG->dataroot  = dirname(__DIR__) . '/moodledata';"));
+
+        // 5. Verifikasi dynamic scaling dengan profil Custom (64 workers)
+        let profile_custom = crate::hardware::custom_profile(64);
+        paths
+            .patch_portable_configs(9090, &profile_custom)
+            .expect("patching dengan concurrency 64 harus berhasil");
+        let scaled_my_ini = fs::read_to_string(paths.mariadb_dir.join("data").join("my.ini")).unwrap();
+        assert!(scaled_my_ini.contains("max_connections=512"));
+        assert!(scaled_my_ini.contains("innodb_buffer_pool_size=1024M"));
+        let scaled_nginx_conf = fs::read_to_string(paths.nginx_dir.join("conf").join("nginx.conf")).unwrap();
+        assert!(scaled_nginx_conf.contains("worker_connections 8192;"));
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

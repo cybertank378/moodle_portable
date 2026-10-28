@@ -22,6 +22,7 @@ pub const LICENSE_FILENAME: &str = "serial_key.lic";
 pub const LOCAL_TOKEN_FILENAME: &str = "aksaventra.token";
 pub const LEGACY_LICENSE_FILENAME: &str = "aksaventra.lic";
 pub const NONCE_SIZE: usize = 12;
+pub const MAX_LICENSE_LIFETIME_SECS: u64 = 365 * 24 * 60 * 60; // Maksimal 1 tahun sejak diaktifkan (365 hari)
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct LicenseRequest {
@@ -172,15 +173,24 @@ impl SecurityManager {
             return Err(anyhow!("Tanda tangan (signature) token lisensi lokal tidak valid (data telah dimodifikasi)"));
         }
 
-        // 3. Verifikasi Waktu Kadaluarsa
-        if let Some(exp) = token.expires_at {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            if now > exp {
-                return Err(anyhow!("Masa berlaku lisensi lokal telah kadaluarsa"));
-            }
+        // 3. Verifikasi Waktu Kadaluarsa & Batas Maksimal 1 Tahun Sejak Diaktifkan
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let max_lifetime_exp = token.created_at.saturating_add(MAX_LICENSE_LIFETIME_SECS);
+        let effective_exp = match token.expires_at {
+            Some(exp) => std::cmp::min(exp, max_lifetime_exp),
+            None => max_lifetime_exp,
+        };
+
+        if now > effective_exp {
+            return Err(anyhow!(
+                "LISENSI KADALUARSA (EXPIRED): Masa berlaku lisensi maksimal 1 tahun sejak aktivasi telah berakhir.\n\
+                 Waktu aktif habis pada timestamp: {}. Silakan lakukan perpanjangan lisensi resmi di https://aksaventra.ai.id",
+                effective_exp
+            ));
         }
 
         Ok(token)
@@ -204,11 +214,24 @@ impl SecurityManager {
             match Self::read_and_verify_local_token(base_dir, &hwid) {
                 Ok(cached_token) => {
                     println!("[AKSAVENTRA] Verifikasi Signature & HWID Lokal: Valid (Offline/Cached Mode).");
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let max_lifetime_exp = cached_token.created_at.saturating_add(MAX_LICENSE_LIFETIME_SECS);
+                    let effective_exp = match cached_token.expires_at {
+                        Some(exp) => std::cmp::min(exp, max_lifetime_exp),
+                        None => max_lifetime_exp,
+                    };
+                    let days_left = effective_exp.saturating_sub(now) / 86400;
+
                     println!(
                         "[AKSAVENTRA] Lisensi Aktif: {} (Terdaftar atas nama: {})",
                         cached_token.serial_key,
                         cached_token.client_name.as_deref().unwrap_or("Pengguna Aksaventra")
                     );
+                    println!("[AKSAVENTRA] Sisa Masa Aktif Lisensi: {} hari lagi", days_left);
+
                     let encryption_key = Self::derive_key(&cached_token.vault_secret, SECRET_SALT);
                     return Ok(Self {
                         serial_key: cached_token.serial_key,
@@ -217,7 +240,20 @@ impl SecurityManager {
                     });
                 }
                 Err(err) => {
-                    println!("[AKSAVENTRA] Lisensi lokal tidak valid / butuh re-connect ({})", err);
+                    let err_str = err.to_string();
+                    if err_str.contains("KADALUARSA") || err_str.contains("EXPIRED") {
+                        eprintln!("\n======================================================================");
+                        eprintln!("        [PERINGATAN] LISENSI ANDA TELAH KADALUARSA (EXPIRED)!");
+                        eprintln!("======================================================================");
+                        eprintln!("  Masa aktif lisensi maksimal 1 tahun sejak aktivasi telah berakhir.");
+                        eprintln!("  Sistem tidak dapat dijalankan sampai lisensi baru diperpanjang.");
+                        eprintln!("  Silakan peroleh Serial Key baru di: https://aksaventra.ai.id");
+                        eprintln!("======================================================================\n");
+                        Self::purge_license_files(base_dir);
+                        return Err(anyhow!("Lisensi telah kadaluarsa (expired). Hubungi https://aksaventra.ai.id untuk perpanjangan."));
+                    } else {
+                        println!("[AKSAVENTRA] Lisensi lokal tidak valid / butuh re-connect ({})", err);
+                    }
                 }
             }
         }
@@ -329,11 +365,16 @@ impl SecurityManager {
             .vault_secret
             .unwrap_or_else(|| "DEFAULT_VAULT_PASSPHRASE".to_string());
 
-        // 6. Simpan File Lisensi Terenkripsi Lokal (Signed Token)
+        // 6. Simpan File Lisensi Terenkripsi Lokal (Signed Token) dengan batas maksimal 1 tahun
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
+        let max_allowed_exp = now.saturating_add(MAX_LICENSE_LIFETIME_SECS);
+        let effective_expires_at = match result.expires_at {
+            Some(exp) => Some(std::cmp::min(exp, max_allowed_exp)),
+            None => Some(max_allowed_exp),
+        };
         let signature = Self::calculate_signature(&serial_key, &hwid, &vault_secret);
         let local_token = LocalLicenseToken {
             serial_key: serial_key.clone(),
@@ -341,7 +382,7 @@ impl SecurityManager {
             client_name: result.client_name.clone(),
             vault_secret: vault_secret.clone(),
             created_at: now,
-            expires_at: result.expires_at,
+            expires_at: effective_expires_at,
             signature,
         };
 
@@ -440,13 +481,17 @@ mod tests {
         let serial = "AKSA-PROD-2026";
         let secret = "SECRET_SEED_VAL";
 
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let signature = SecurityManager::calculate_signature(serial, hwid_a, secret);
         let token = LocalLicenseToken {
             serial_key: serial.to_string(),
             hwid: hwid_a.to_string(),
             client_name: Some("Klien Demo".to_string()),
             vault_secret: secret.to_string(),
-            created_at: 1000,
+            created_at: now,
             expires_at: None,
             signature,
         };
@@ -489,6 +534,62 @@ mod tests {
         SecurityManager::purge_license_files(&temp_dir);
         assert!(!lic_file.exists(), "Berkas serial_key.lic harus terhapus setelah purge");
         assert!(!token_file.exists(), "Berkas aksaventra.token harus terhapus setelah purge");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_license_expiration_validation_after_one_year() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "aksaventra_lic_exp_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let hwid = "HWID-EXPIRE-TEST";
+        let serial = "AKSA-KEY-EXP";
+        let secret = "SECRET";
+        let signature = SecurityManager::calculate_signature(serial, hwid, secret);
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // 1. Token dibuat lebih dari 1 tahun yang lalu
+        let expired_token = LocalLicenseToken {
+            serial_key: serial.to_string(),
+            hwid: hwid.to_string(),
+            client_name: Some("Klien Expired".to_string()),
+            vault_secret: secret.to_string(),
+            created_at: now.saturating_sub(MAX_LICENSE_LIFETIME_SECS + 100),
+            expires_at: None,
+            signature: signature.clone(),
+        };
+
+        SecurityManager::save_local_token(&temp_dir, &expired_token).unwrap();
+        let res = SecurityManager::read_and_verify_local_token(&temp_dir, hwid);
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("KADALUARSA") || err_msg.contains("EXPIRED"));
+
+        // 2. Token baru aktif (kurang dari 1 tahun) -> Harus valid
+        let valid_token = LocalLicenseToken {
+            serial_key: serial.to_string(),
+            hwid: hwid.to_string(),
+            client_name: Some("Klien Aktif".to_string()),
+            vault_secret: secret.to_string(),
+            created_at: now,
+            expires_at: Some(now + MAX_LICENSE_LIFETIME_SECS),
+            signature,
+        };
+
+        SecurityManager::save_local_token(&temp_dir, &valid_token).unwrap();
+        let valid_res = SecurityManager::read_and_verify_local_token(&temp_dir, hwid);
+        assert!(valid_res.is_ok());
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

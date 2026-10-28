@@ -18,9 +18,18 @@ Selamat datang di rilis **Aksaventra Portable Engine v2.2.0**! Pembaruan ini men
 - **Nginx Dual-Interface Listen**: Nginx dikonfigurasi `listen {port}; server_name _;` sehingga dapat diakses oleh HP/laptop siswa di jaringan Wi-Fi yang sama tanpa perlu setting firewall/IP manual.
 
 ### 3. ⚡ Eliminasi Total HTTP Error 503 (High-Concurrency Architecture)
-- **Multi-Process PHP FastCGI Worker Pool**: Menjalankan `php-cgi.exe` dengan `PHP_FCGI_CHILDREN = 16` dan `PHP_FCGI_MAX_REQUESTS = 10000`, menangani puluhan sub-request aset CSS/JS paralel Moodle tanpa antrean putus.
+- **Multi-Process PHP FastCGI Worker Pool**: Menjalankan `php-cgi.exe` dengan worker pool multi-proses dan `PHP_FCGI_MAX_REQUESTS = 10000`, menangani puluhan sub-request aset CSS/JS paralel Moodle tanpa antrean putus.
 - **High-Throughput FastCGI Buffers**: Nginx FastCGI buffer dinaikkan menjadi `buffer_size 128k`, `buffers 16 128k`, `busy_buffers_size 256k`, `temp_file_write_size 512k`.
-- **Optimal MariaDB Connection Pool**: `max_connections = 250`, `max_allowed_packet = 64M`, `connect_timeout = 30`, `wait_timeout = 600`.
+- **Optimal MariaDB Connection Pool**: MariaDB dikonfigurasi adaptif dengan `max_allowed_packet = 64M`, `connect_timeout = 30`, `wait_timeout = 600`.
+
+### 4. 🎛️ Auto Hardware Recommendation & Dynamic Concurrency Scaling
+- **Deteksi Spesifikasi Host Otomatis**: Engine mendeteksi jumlah Core CPU dan total RAM fisik komputer host sebelum proses unpack dan inisialisasi server.
+- **Rekomendasi Profil Otomatis**:
+  - **`Eco`** (≤4GB RAM / Dual-Core): 8 Workers, 128M DB Buffer, 1024 Nginx Connections (Estimasi: 25 - 50 Siswa Ujian).
+  - **`Balanced`** (8GB RAM / Quad-Core): 16 Workers, 256M DB Buffer, 2048 Nginx Connections (Estimasi: 50 - 100 Siswa Ujian).
+  - **`High Performance`** (16GB RAM / 8-Core): 32 Workers, 1024M DB Buffer, 4096 Nginx Connections (Estimasi: 150 - 250 Siswa Ujian).
+  - **`Extreme`** (≥32GB RAM / 12+ Core): 64 Workers, 2048M DB Buffer, 8192 Nginx Connections (Estimasi: 300 - 500+ Siswa Ujian).
+- **Opsi Kustomisasi Fleksibel**: Pengguna dapat mengubah alokasi daya tampung menggunakan parameter baris perintah `-c, --workers <JUMLAH>` atau `--profile <eco|normal|high|extreme>` sebelum aplikasi dijalankan.
 
 ---
 
