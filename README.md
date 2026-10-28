@@ -1,11 +1,11 @@
-# Aksaventra Portable Engine v2.2 (LMS Portable 64-bit)
+# Aksaventra Portable Engine v2.2.1 (LMS Portable 64-bit)
 
 [![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20x64-blue.svg)]()
-[![Release](https://img.shields.io/badge/Release-v2.2.0-brightgreen.svg)](https://github.com/cybertank378/moodle_portable/releases/tag/v2.2.0)
+[![Release](https://img.shields.io/badge/Release-v2.2.1-brightgreen.svg)](https://github.com/cybertank378/moodle_portable/releases/tag/v2.2.1)
 [![License](https://img.shields.io/badge/License-GPL--3.0-lightgrey.svg)]()
 
-**Aksaventra Portable Engine v2.2** adalah platform Learning Management System (LMS) portabel berbasis web mandiri untuk Microsoft Windows (64-bit). 
+**Aksaventra Portable Engine v2.2.1** adalah platform Learning Management System (LMS) portabel berbasis web mandiri untuk Microsoft Windows (64-bit). 
 
 Seluruh tumpukan server (**Nginx Web Server**, **PHP 8.2 FastCGI Multi-Process**, **MariaDB Database Server**, dan **Moodle LMS Core**) dikemas ke dalam satu kontainer brankas terenkripsi (**`aksaventra_vault.pak`**) dengan perlindungan enkripsi militer **AES-256-GCM** dan kompresi multi-threaded **Zstandard (`zstdmt`)**.
 
@@ -15,7 +15,7 @@ Anda **tidak perlu menginstal XAMPP, WampServer, Docker, atau software pihak ket
 
 ## 📋 Daftar Isi
 1. [Panduan Pengguna Akhir (Quick Start)](#-panduan-pengguna-akhir-quick-start)
-   - [Langkah 1: Unduh Paket Rilis v2.2.0](#langkah-1-unduh-paket-rilis-v220)
+   - [Langkah 1: Unduh Paket Rilis v2.2.1](#langkah-1-unduh-paket-rilis-v221)
    - [Langkah 2: Persiapan Berkas Aplikasi](#langkah-2-persiapan-berkas-aplikasi)
    - [Langkah 3: Jalankan `aksaventra_engine.exe`](#langkah-3-jalankan-aksaventra_engineexe)
    - [Langkah 4: Akses LMS Melalui Browser](#langkah-4-akses-lms-melalui-browser)
@@ -35,9 +35,9 @@ Anda **tidak perlu menginstal XAMPP, WampServer, Docker, atau software pihak ket
 
 Panduan ini ditujukan bagi guru, pengajar, proktor ujian, administrator sekolah, atau pengguna umum yang ingin langsung menjalankan aplikasi LMS tanpa setup rumit.
 
-### Langkah 1: Unduh Paket Rilis v2.2.0
+### Langkah 1: Unduh Paket Rilis v2.2.1
 Kunjungi halaman rilis resmi kami di GitHub:
-👉 **[Unduh Aksaventra Portable Engine v2.2.0](https://github.com/cybertank378/moodle_portable/releases/tag/v2.2.0)**
+👉 **[Unduh Aksaventra Portable Engine v2.2.1](https://github.com/cybertank378/moodle_portable/releases/tag/v2.2.1)**
 
 Paket distribusi mencakup:
 - 🚀 **`aksaventra_engine.exe`** (Engine peluncur mandiri berbasis Rust)
