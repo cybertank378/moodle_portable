@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
     }
 
     println!("======================================================");
-    println!("          AKSAVENTRA PORTABLE ENGINE v2.0             ");
+    println!("       AKSAVENTRA PORTABLE ENGINE v{}          ", env!("CARGO_PKG_VERSION"));
     println!("       Powered by Rust | aksaventra.ai.id             ");
     println!("======================================================");
 
@@ -86,18 +86,28 @@ async fn main() -> Result<()> {
     services.start_all(&paths, app_port)?;
 
     // 6. Buka aplikasi di peramban (browser) default
-    let app_url = format!("http://127.0.0.1:{}", app_port);
+    let active_ip = network::get_active_local_ip();
+    let local_url = format!("http://localhost:{}", app_port);
+    let lan_url = format!("http://{}:{}", active_ip, app_port);
     println!("======================================================");
     println!("   AKSAVENTRA PORTABLE LMS TELAH AKTIF & BERJALAN     ");
     println!("======================================================");
-    println!("  Alamat URL Web:  {}", app_url);
-    println!("  Status Layanan:  MariaDB, PHP FastCGI, Nginx (Aktif)");
+    println!("  Akses Lokal (Laptop Server) : {}", local_url);
+    if active_ip != "127.0.0.1" {
+        println!("  Akses Jaringan (Wi-Fi/LAN)  : {}", lan_url);
+    }
+    println!("  Status Layanan              : MariaDB, PHP FastCGI (16 Workers), Nginx");
     println!("======================================================");
     println!("  Tekan Ctrl+C untuk menutup dan mengamankan data.     ");
     println!("======================================================");
 
     if !args.iter().any(|arg| arg == "--skip-browser") {
-        let _ = ServiceOrchestrator::open_browser(&app_url);
+        let target_url = if active_ip != "127.0.0.1" {
+            &lan_url
+        } else {
+            &local_url
+        };
+        let _ = ServiceOrchestrator::open_browser(target_url);
     }
 
     // 7. Penanganan sinyal keluar aplikasi (Ctrl+C Graceful Shutdown & Re-encryption)

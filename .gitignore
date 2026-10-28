@@ -6,6 +6,8 @@ Cargo.lock
 # Aksaventra Encrypted Vault & License
 *.pak
 *.lic
+*.token
+*.zip
 .vault/
 .aksaventra_rt/
 .runtime_mount/

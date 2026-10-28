@@ -68,8 +68,6 @@ impl PortablePaths {
     /// Menulis ulang konfigurasi agar selalu portabel di komputer/drive mana pun
     pub fn patch_portable_configs(&self, port: u16) -> Result<()> {
         let moodle_posix = Self::to_posix_path(&self.moodle_dir);
-        let moodledata_posix = Self::to_posix_path(&self.moodledata_dir);
-        let php_posix = Self::to_posix_path(&self.php_dir);
         let mariadb_posix = Self::to_posix_path(&self.mariadb_dir);
 
         // 1. Patch MariaDB (my.ini)
@@ -84,7 +82,11 @@ impl PortablePaths {
             bind-address=127.0.0.1\n\
             character-set-server=utf8mb4\n\
             collation-server=utf8mb4_unicode_ci\n\
-            innodb_buffer_pool_size=256M\n"
+            innodb_buffer_pool_size=256M\n\
+            max_connections=250\n\
+            max_allowed_packet=64M\n\
+            connect_timeout=30\n\
+            wait_timeout=600\n"
         );
         fs::write(&my_ini_path, my_ini_content)?;
 
@@ -103,7 +105,7 @@ impl PortablePaths {
             for line in php_ini.lines() {
                 let trimmed = line.trim_start();
                 if trimmed.starts_with("extension_dir") || trimmed.starts_with(";extension_dir") {
-                    updated_lines.push(format!("extension_dir = \"{}/ext\"", php_posix));
+                    updated_lines.push("extension_dir = \"ext\"".to_string());
                     extension_dir_set = true;
                 } else if trimmed.starts_with("session.save_path")
                     || trimmed.starts_with(";session.save_path")
@@ -116,7 +118,7 @@ impl PortablePaths {
             }
 
             if !extension_dir_set {
-                updated_lines.push(format!("extension_dir = \"{}/ext\"", php_posix));
+                updated_lines.push("extension_dir = \"ext\"".to_string());
             }
             if !session_save_path_set {
                 updated_lines.push(format!("session.save_path = \"{}\"", session_posix));
@@ -138,11 +140,12 @@ impl PortablePaths {
         fs::create_dir_all(&temp_dir)?;
 
         // 3a. Tulis virtual host Moodle di sites-enabled/moodle.conf secara dinamis
+        // Listen pada seluruh interface (0.0.0.0:{port}) dan server_name _ agar dapat diakses dari IP lokal aktif / Wi-Fi
         let moodle_vhost_path = sites_enabled_dir.join("moodle.conf");
         let moodle_vhost = format!(
             "server {{\n\
-                listen 127.0.0.1:{port};\n\
-                server_name localhost 127.0.0.1;\n\
+                listen {port};\n\
+                server_name _;\n\
                 root \"{moodle_posix}\";\n\
                 index index.php index.html index.htm;\n\
                 \n\
@@ -172,14 +175,19 @@ impl PortablePaths {
                     include fastcgi_params;\n\
                     fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n\
                     fastcgi_param PATH_INFO $fastcgi_path_info;\n\
-                    fastcgi_read_timeout 300s;\n\
+                    fastcgi_connect_timeout 60s;\n\
                     fastcgi_send_timeout 300s;\n\
+                    fastcgi_read_timeout 300s;\n\
+                    fastcgi_buffer_size 128k;\n\
+                    fastcgi_buffers 16 128k;\n\
+                    fastcgi_busy_buffers_size 256k;\n\
+                    fastcgi_temp_file_write_size 512k;\n\
                 }}\n\
             }}\n"
         );
         fs::write(&moodle_vhost_path, moodle_vhost)?;
 
-        // 3b. Tulis konfigurasi utama Nginx dengan memanggil include sites-enabled/*.conf secara dinamis
+        // 3b. Tulis konfigurasi utama Nginx dengan worker pool dan buffer optimal untuk mencegah 503
         let nginx_conf_path = conf_dir.join("nginx.conf");
         let nginx_conf = format!(
             "worker_processes 1;\n\
@@ -187,7 +195,7 @@ impl PortablePaths {
             pid logs/nginx.pid;\n\
             \n\
             events {{\n\
-                worker_connections 1024;\n\
+                worker_connections 2048;\n\
             }}\n\
             \n\
             http {{\n\
@@ -206,8 +214,11 @@ impl PortablePaths {
                 fastcgi_connect_timeout 60s;\n\
                 fastcgi_send_timeout 300s;\n\
                 fastcgi_read_timeout 300s;\n\
-                fastcgi_buffers 16 16k;\n\
-                fastcgi_buffer_size 32k;\n\
+                fastcgi_buffer_size 128k;\n\
+                fastcgi_buffers 16 128k;\n\
+                fastcgi_busy_buffers_size 256k;\n\
+                fastcgi_temp_file_write_size 512k;\n\
+                fastcgi_intercept_errors off;\n\
                 \n\
                 # ============================================================\n\
                 # LOAD VIRTUAL HOSTS (DINAMIS PORTABEL)\n\
@@ -221,14 +232,21 @@ impl PortablePaths {
         let moodle_cfg_path = self.moodle_dir.join("config.php");
         if moodle_cfg_path.exists() {
             let cfg_content = fs::read_to_string(&moodle_cfg_path)?;
+            let active_ip = crate::network::get_active_local_ip();
             let mut updated_lines = Vec::new();
 
             for line in cfg_content.lines() {
                 let trimmed = line.trim_start();
                 if trimmed.starts_with("$CFG->dataroot") {
-                    updated_lines.push(format!("$CFG->dataroot  = '{}';", moodledata_posix));
+                    // Gunakan ekspresi dinamis dirname(__DIR__) agar 100% portabel tanpa hardcoded path
+                    updated_lines.push("$CFG->dataroot  = dirname(__DIR__) . '/moodledata';".to_string());
                 } else if trimmed.starts_with("$CFG->wwwroot") {
-                    updated_lines.push(format!("$CFG->wwwroot   = 'http://127.0.0.1:{}';", port));
+                    // Gunakan logika dinamis berbasis HTTP_HOST request atau fallback ke IP lokal aktif
+                    let dynamic_wwwroot = format!(
+                        "$CFG->wwwroot   = !empty($_SERVER['HTTP_HOST']) ? (((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https://' : 'http://') . $_SERVER['HTTP_HOST']) : 'http://{}:{}';",
+                        active_ip, port
+                    );
+                    updated_lines.push(dynamic_wwwroot);
                 } else {
                     updated_lines.push(line.to_string());
                 }
@@ -308,10 +326,9 @@ mod tests {
 
         // 2. Verifikasi PHP php.ini
         let php_ini = fs::read_to_string(paths.php_dir.join("php.ini")).unwrap();
-        let php_posix = PortablePaths::to_posix_path(&paths.php_dir);
         let session_posix =
             PortablePaths::to_posix_path(&paths.moodledata_dir.join("sessions"));
-        assert!(php_ini.contains(&format!("extension_dir = \"{}/ext\"", php_posix)));
+        assert!(php_ini.contains("extension_dir = \"ext\""));
         assert!(php_ini.contains(&format!("session.save_path = \"{}\"", session_posix)));
 
         // 3. Verifikasi Nginx nginx.conf & sites-enabled/moodle.conf
@@ -331,15 +348,14 @@ mod tests {
                 .join("moodle.conf"),
         )
         .unwrap();
-        assert!(moodle_conf.contains("listen 127.0.0.1:9090;"));
+        assert!(moodle_conf.contains("listen 9090;"));
         let moodle_posix = PortablePaths::to_posix_path(&paths.moodle_dir);
         assert!(moodle_conf.contains(&format!("root \"{}\";", moodle_posix)));
 
         // 4. Verifikasi Moodle config.php
         let moodle_cfg = fs::read_to_string(paths.moodle_dir.join("config.php")).unwrap();
-        assert!(moodle_cfg.contains("$CFG->wwwroot   = 'http://127.0.0.1:9090';"));
-        let moodledata_posix = PortablePaths::to_posix_path(&paths.moodledata_dir);
-        assert!(moodle_cfg.contains(&format!("$CFG->dataroot  = '{}';", moodledata_posix)));
+        assert!(moodle_cfg.contains("$CFG->wwwroot") && moodle_cfg.contains(":9090"));
+        assert!(moodle_cfg.contains("$CFG->dataroot  = dirname(__DIR__) . '/moodledata';"));
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

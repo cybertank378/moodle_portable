@@ -18,8 +18,8 @@ $CFG->dboptions = array (
   'dbcollation' => 'utf8mb4_unicode_ci',
 );
 
-$CFG->wwwroot   = 'http://127.0.0.1:8080';
-$CFG->dataroot  = 'D:/Project/moodle_installer/moodledata';
+$CFG->wwwroot   = !empty($_SERVER['HTTP_HOST']) ? (((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https://' : 'http://') . $_SERVER['HTTP_HOST']) : 'http://127.0.0.1:8080';
+$CFG->dataroot  = dirname(__DIR__) . '/moodledata';
 $CFG->admin     = 'admin';
 
 $CFG->directorypermissions = 0777;

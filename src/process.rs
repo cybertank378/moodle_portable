@@ -150,6 +150,8 @@ impl ServiceOrchestrator {
         self.php_proc = Some(
             Command::new(&php_cgi_bin)
                 .args(["-b", &format!("127.0.0.1:{}", PHP_PORT), "-c", &php_ini.to_string_lossy()])
+                .env("PHP_FCGI_CHILDREN", "16")
+                .env("PHP_FCGI_MAX_REQUESTS", "10000")
                 .current_dir(&paths.php_dir)
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())

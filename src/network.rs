@@ -8,6 +8,36 @@ pub fn is_port_available(port: u16) -> bool {
     TcpListener::bind(addr).is_ok()
 }
 
+/// Mendeteksi alamat IP lokal aktif (LAN/Wi-Fi) yang digunakan mesin
+pub fn get_active_local_ip() -> String {
+    // 1. Coba hubungkan socket UDP semu ke gateway / DNS publik tanpa mengirim paket data
+    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+        if socket.connect("8.8.8.8:80").is_ok() {
+            if let Ok(addr) = socket.local_addr() {
+                let ip = addr.ip().to_string();
+                if ip != "0.0.0.0" && !ip.starts_with("127.") {
+                    return ip;
+                }
+            }
+        }
+    }
+
+    // 2. Fallback: coba hubungkan ke router LAN standar
+    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+        if socket.connect("192.168.1.1:80").is_ok() {
+            if let Ok(addr) = socket.local_addr() {
+                let ip = addr.ip().to_string();
+                if ip != "0.0.0.0" && !ip.starts_with("127.") {
+                    return ip;
+                }
+            }
+        }
+    }
+
+    // 3. Fallback: 127.0.0.1 jika mesin terisolasi / offline tanpa router
+    "127.0.0.1".to_string()
+}
+
 /// Menemukan port yang tersedia mulai dari port yang diinginkan (preferred)
 pub fn find_available_port(preferred_port: u16) -> u16 {
     if is_port_available(preferred_port) {

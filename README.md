@@ -1,13 +1,13 @@
-# Aksaventra Portable Engine v2.1 (LMS Portable 64-bit)
+# Aksaventra Portable Engine v2.2 (LMS Portable 64-bit)
 
 [![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20x64-blue.svg)]()
-[![Release](https://img.shields.io/badge/Release-v2.1.0-brightgreen.svg)](https://github.com/cybertank378/moodle_portable/releases/tag/v2.1.0)
+[![Release](https://img.shields.io/badge/Release-v2.2.0-brightgreen.svg)](https://github.com/cybertank378/moodle_portable/releases/tag/v2.2.0)
 [![License](https://img.shields.io/badge/License-GPL--3.0-lightgrey.svg)]()
 
-**Aksaventra Portable Engine v2.1** adalah platform Learning Management System (LMS) portabel berbasis web mandiri untuk Microsoft Windows (64-bit). 
+**Aksaventra Portable Engine v2.2** adalah platform Learning Management System (LMS) portabel berbasis web mandiri untuk Microsoft Windows (64-bit). 
 
-Seluruh tumpukan server (**Nginx Web Server**, **PHP 8.2 FastCGI**, **MariaDB Database Server**, dan **Moodle LMS Core**) dikemas ke dalam satu kontainer brankas terenkripsi (**`aksaventra_vault.pak`**) dengan perlindungan enkripsi militer **AES-256-GCM** dan kompresi multi-threaded **Zstandard (`zstdmt`)**.
+Seluruh tumpukan server (**Nginx Web Server**, **PHP 8.2 FastCGI Multi-Process**, **MariaDB Database Server**, dan **Moodle LMS Core**) dikemas ke dalam satu kontainer brankas terenkripsi (**`aksaventra_vault.pak`**) dengan perlindungan enkripsi militer **AES-256-GCM** dan kompresi multi-threaded **Zstandard (`zstdmt`)**.
 
 Anda **tidak perlu menginstal XAMPP, WampServer, Docker, atau software pihak ketiga lainnya**, dan **tidak memerlukan hak Administrator (UAC)**.
 
@@ -15,13 +15,13 @@ Anda **tidak perlu menginstal XAMPP, WampServer, Docker, atau software pihak ket
 
 ## 📋 Daftar Isi
 1. [Panduan Pengguna Akhir (Quick Start)](#-panduan-pengguna-akhir-quick-start)
-   - [Langkah 1: Unduh Paket Rilis v2.1.0](#langkah-1-unduh-paket-rilis-v210)
+   - [Langkah 1: Unduh Paket Rilis v2.2.0](#langkah-1-unduh-paket-rilis-v220)
    - [Langkah 2: Persiapan Berkas Aplikasi](#langkah-2-persiapan-berkas-aplikasi)
    - [Langkah 3: Jalankan `aksaventra_engine.exe`](#langkah-3-jalankan-aksaventra_engineexe)
    - [Langkah 4: Akses LMS Melalui Browser](#langkah-4-akses-lms-melalui-browser)
    - [Langkah 5: Cara Menutup Aplikasi dengan Aman](#langkah-5-cara-menutup-aplikasi-dengan-aman)
 2. [Sistem Lisensi & Hardware ID (HWID)](#-sistem-lisensi--hardware-id-hwid)
-3. [Arsitektur & Keunggulan Akselerasi v2.0](#-arsitektur--keunggulan-akselerasi-v20)
+3. [Arsitektur & Keunggulan Akselerasi v2.2](#-arsitektur--keunggulan-akselerasi-v22)
 4. [Akses Multi-Perangkat (HP / Laptop Siswa via Wi-Fi/LAN)](#-akses-multi-perangkat-hp--laptop-siswa-via-wi-filan)
 5. [Portabilitas & Pencadangan (Backup ke Flashdisk)](#-portabilitas--pencadangan-backup-ke-flashdisk)
 6. [Tanya Jawab & Pemecahan Masalah (Troubleshooting)](#-tanya-jawab--pemecahan-masalah-troubleshooting)
@@ -35,9 +35,9 @@ Anda **tidak perlu menginstal XAMPP, WampServer, Docker, atau software pihak ket
 
 Panduan ini ditujukan bagi guru, pengajar, proktor ujian, administrator sekolah, atau pengguna umum yang ingin langsung menjalankan aplikasi LMS tanpa setup rumit.
 
-### Langkah 1: Unduh Paket Rilis v2.1.0
+### Langkah 1: Unduh Paket Rilis v2.2.0
 Kunjungi halaman rilis resmi kami di GitHub:
-👉 **[Unduh Aksaventra Portable Engine v2.1.0](https://github.com/cybertank378/moodle_portable/releases/tag/v2.1.0)**
+👉 **[Unduh Aksaventra Portable Engine v2.2.0](https://github.com/cybertank378/moodle_portable/releases/tag/v2.2.0)**
 
 Paket distribusi mencakup:
 - 🚀 **`aksaventra_engine.exe`** (Engine peluncur mandiri berbasis Rust)
@@ -86,8 +86,9 @@ AksaventraLMS/
 ======================================================
    AKSAVENTRA PORTABLE LMS TELAH AKTIF & BERJALAN     
 ======================================================
-  Alamat URL Web:  http://127.0.0.1:8080
-  Status Layanan:  MariaDB, PHP FastCGI, Nginx (Aktif)
+  Akses Lokal (Server):  http://127.0.0.1:8080
+  Akses Jaringan (LAN):  http://192.168.1.50:8080
+  Status Layanan:        MariaDB, PHP FastCGI, Nginx (Aktif)
 ======================================================
   Tekan Ctrl+C untuk menutup dan mengamankan data.     
 ======================================================
@@ -101,9 +102,9 @@ AksaventraLMS/
 
 ### Langkah 4: Akses LMS Melalui Browser
 Setelah proses inisialisasi selesai:
-1. Browser default Anda akan terbuka secara otomatis ke alamat:
+1. Browser default Anda akan terbuka secara otomatis ke alamat LMS aktif:
    ```text
-   http://127.0.0.1:8080
+   http://127.0.0.1:8080 atau http://<IP-LOKAL>:8080
    ```
 2. Anda akan langsung melihat beranda LMS Moodle. Masuk menggunakan akun **Administrator Bawaan**:
    - **Username**: `admin`
@@ -125,7 +126,7 @@ Untuk menjaga agar data ujian, materi, dan database tidak rusak atau korup:
 
 ## 🔑 Sistem Lisensi & Hardware ID (HWID)
 
-Aksaventra Engine v2.0 dilengkapi dengan sistem otentikasi lisensi terikat perangkat keras (*hardware-locked*) dan penandatanganan kriptografis (*signed token*):
+Aksaventra Engine v2.2 dilengkapi dengan sistem otentikasi lisensi terikat perangkat keras (*hardware-locked*) dan penandatanganan kriptografis (*signed token*):
 
 1. **Aktivasi Pertama Kali (Online Handshake)**:
    - Serial Key diverifikasi bersama Machine ID / Hardware ID (`HWID`) unik perangkat ke endpoint `https://aksaventra.ai.id/api/v1/validate`.
@@ -138,10 +139,16 @@ Aksaventra Engine v2.0 dilengkapi dengan sistem otentikasi lisensi terikat peran
 
 ---
 
-## ⚡ Arsitektur & Keunggulan Akselerasi v2.0
+## ⚡ Arsitektur & Keunggulan Akselerasi v2.2
 
+- **Zero HTTP 503 Multi-Process FastCGI**:
+  - `php-cgi.exe` dijalankan dengan worker pool multi-proses (`PHP_FCGI_CHILDREN = 16`, `PHP_FCGI_MAX_REQUESTS = 10000`) dan Nginx FastCGI buffer kapasitas tinggi (128k/256k/512k). Menghilangkan bottleneck dan error 503 saat Moodle memuat puluhan aset CSS/JS paralel secara bersamaan.
+- **Dynamic Active LAN/Wi-Fi IP Binding**:
+  - Engine otomatis mendeteksi IP jaringan lokal aktif komputer server (`get_active_local_ip`) dan langsung mengonfigurasi Moodle `$CFG->wwwroot` secara dinamis serta Nginx vhost (`listen {port}; server_name _;`). Akses via `127.0.0.1` maupun IP LAN berfungsi serentak tanpa looping redirect.
+- **100% Dynamic Relative Paths (True Portability)**:
+  - Seluruh konfigurasi sistem (`php.ini`, `config.php`, `my.ini`, `nginx.conf`) menggunakan path dinamis dan relatif (`extension_dir = "ext"`, `$CFG->dataroot = dirname(__DIR__) . '/moodledata'`). Bebas dari hardcoded drive path sehingga dapat dipindahkan ke flashdisk/drive apa pun.
 - **Multi-Threaded Vault Packaging (`zstdmt` Level 1)**:
-  - Mengompresi 30.904 berkas ke dalam wadah `aksaventra_vault.pak` menggunakan multi-core CPU secara paralel (~59 detik).
+  - Mengompresi puluhan ribu berkas ke dalam wadah `aksaventra_vault.pak` menggunakan multi-core CPU secara paralel (~59 detik).
 - **Parallel Batch Extraction (Rayon Multi-Threading)**:
   - Ekstraksi batch 2.000 berkas secara paralel ke SSD/NVMe dengan queue depth tinggi, memangkas waktu unseal dari hitungan menit menjadi hitungan detik.
 - **Directory Deduplication**:
@@ -151,14 +158,17 @@ Aksaventra Engine v2.0 dilengkapi dengan sistem otentikasi lisensi terikat peran
 - **Headless Win32 Process Orchestrator**:
   - Seluruh daemon (Nginx, PHP, MariaDB) dijalankan tanpa jendela CMD yang mengganggu (`CREATE_NO_WINDOW`).
 - **Automated MariaDB Bootstrap**:
-  - Inisialisasi otomatis `mariadb-install-db.exe` dan pembuatan database `moodle` (`utf8mb4_unicode_ci`) pada saat startup.
+  - Inisialisasi otomatis `mariadb-install-db.exe` dan pembuatan database `moodle` (`utf8mb4_unicode_ci`) pada saat startup dengan connection limit optimal (250 connections).
 
 ---
 
 ## 📱 Akses Multi-Perangkat (HP / Laptop Siswa via Wi-Fi/LAN)
 
 1. Pastikan laptop server dan perangkat siswa terhubung ke **jaringan Wi-Fi atau hotspot yang sama**.
-2. Cari tahu alamat IP lokal laptop server Anda (ketik `ipconfig` di Command Prompt, misal: `192.168.1.50`).
+2. Engine akan otomatis menampilkan alamat IP Jaringan (LAN) Anda di konsol pada saat dinyalakan, contoh:
+   ```text
+   Akses Jaringan (LAN): http://192.168.1.50:8080
+   ```
 3. Beritahukan alamat tersebut kepada siswa:
    ```text
    http://192.168.1.50:8080
@@ -220,7 +230,7 @@ Biner hasil kompilasi akan berada di `target\x86_64-pc-windows-msvc\release\aksa
 ```powershell
 cargo test --bin aksaventra_engine
 ```
-Seluruh 19 unit test dipastikan lulus 100% hijau.
+Seluruh 18 unit test dipastikan lulus 100% hijau.
 
 ---
 
