@@ -126,7 +126,8 @@ impl VaultContainer {
         }
 
         let mut file = File::open(pak_file)?;
-        let mut raw_data = Vec::new();
+        let file_len = file.metadata().map(|m| m.len() as usize).unwrap_or(0);
+        let mut raw_data = Vec::with_capacity(file_len);
         file.read_to_end(&mut raw_data)?;
 
         if raw_data.len() <= NONCE_SIZE {
@@ -170,17 +171,21 @@ impl VaultContainer {
     pub fn seal_folders(runtime_dir: &Path, vault_file: &Path, key: &[u8; 32]) -> Result<()> {
         println!("[VAULT] Menghitung berkas yang akan disegel ke dalam brankas...");
 
-        let mut total_files_to_pack = 0;
-        for dir_name in PROTECTED_DIRS.iter() {
-            let target = runtime_dir.join(dir_name);
-            if target.exists() {
-                total_files_to_pack += walkdir::WalkDir::new(&target)
-                    .into_iter()
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.file_type().is_file())
-                    .count();
-            }
-        }
+        let total_files_to_pack: usize = PROTECTED_DIRS
+            .par_iter()
+            .map(|dir_name| {
+                let target = runtime_dir.join(dir_name);
+                if target.exists() {
+                    walkdir::WalkDir::new(&target)
+                        .into_iter()
+                        .filter_map(|e| e.ok())
+                        .filter(|e| e.file_type().is_file())
+                        .count()
+                } else {
+                    0
+                }
+            })
+            .sum();
 
         println!("[VAULT] Total {} berkas terdeteksi. Memulai proses sealing & kompresi...", total_files_to_pack);
 
@@ -194,7 +199,8 @@ impl VaultContainer {
 
         let mut total_files = 0;
         // 1. Buat Tar Archive di memori dengan Zstd kompresi dan path normalisasi
-        let mut tar_data = Vec::new();
+        // Pre-alokasi buffer kapasitas 128 MB untuk menghindari realokasi berulang pada heap
+        let mut tar_data = Vec::with_capacity(128 * 1024 * 1024);
         {
             let mut enc = zstd::Encoder::new(&mut tar_data, 1)?;
             let threads = std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(4);
@@ -287,7 +293,8 @@ impl VaultContainer {
         println!("[VAULT] Membuka enkripsi kontainer aplikasi dan mengekstrak komponen...");
 
         let mut file = File::open(vault_file)?;
-        let mut raw_data = Vec::new();
+        let file_len = file.metadata().map(|m| m.len() as usize).unwrap_or(0);
+        let mut raw_data = Vec::with_capacity(file_len);
         file.read_to_end(&mut raw_data)?;
 
         if raw_data.len() <= NONCE_SIZE {
@@ -308,7 +315,7 @@ impl VaultContainer {
 
         println!("[VAULT] Mengekstrak seluruh berkas ke ruang kerja terproteksi (Multi-Threaded)...");
         let decoder = zstd::Decoder::new(&decrypted_zstd[..])?;
-        let buf_decoder = std::io::BufReader::with_capacity(512 * 1024, decoder);
+        let buf_decoder = std::io::BufReader::with_capacity(4 * 1024 * 1024, decoder);
         let mut archive = Archive::new(buf_decoder);
         archive.set_preserve_permissions(false);
         archive.set_preserve_mtime(false);

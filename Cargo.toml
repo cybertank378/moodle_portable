@@ -29,3 +29,10 @@ winapi = { version = "0.3", features = ["fileapi", "winnt"] }
 
 [build-dependencies]
 winres = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
