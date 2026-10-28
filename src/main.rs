@@ -73,26 +73,36 @@ async fn main() -> Result<()> {
     let hw_specs = hardware::detect_hardware();
     println!("[HARDWARE] Deteksi Spesifikasi Host : {} Core CPU | {:.1} GB Total RAM", hw_specs.cpu_cores, hw_specs.total_ram_gb);
 
+    let mut is_auto = true;
     let active_profile = if let Some(pos) = args.iter().position(|a| a == "-c" || a == "--concurrency" || a == "--workers") {
+        is_auto = false;
         if let Some(val) = args.get(pos + 1).and_then(|v| v.parse::<u32>().ok()) {
             hardware::custom_profile(val)
         } else {
             hardware::recommend_profile(&hw_specs)
         }
     } else if let Some(pos) = args.iter().position(|a| a == "--profile") {
+        is_auto = false;
         if let Some(val) = args.get(pos + 1) {
             hardware::profile_from_name(val).unwrap_or_else(|| hardware::recommend_profile(&hw_specs))
         } else {
             hardware::recommend_profile(&hw_specs)
         }
     } else if let Ok(val) = env::var("AKSAVENTRA_CONCURRENCY").and_then(|v| v.parse::<u32>().map_err(|_| env::VarError::NotPresent)) {
+        is_auto = false;
         hardware::custom_profile(val)
     } else {
-        // Otomatis tentukan profil terbaik berdasarkan hardware aktif
+        // Otomatis tentukan profil terbaik berdasarkan hardware aktif (Mode Default Klik 2x)
         hardware::recommend_profile(&hw_specs)
     };
 
-    println!("[TUNING] Profil Performa Terpilih   : {}", active_profile.name);
+    if is_auto {
+        println!("[TUNING] Mode Otomatis (Klik 2x): Menggunakan rekomendasi performa terbaik untuk hardware Anda.");
+    } else {
+        println!("[TUNING] Mode Manual (CLI Override): Menggunakan parameter performa yang ditentukan pengguna.");
+    }
+
+    println!("[TUNING] Profil Performa Aktif     : {}", active_profile.name);
     println!("  * PHP FastCGI Worker Pool       : {} Workers", active_profile.workers);
     println!("  * MariaDB InnoDB Buffer Pool    : {}", active_profile.buffer_pool);
     println!("  * Nginx Worker Connections      : {}", active_profile.nginx_connections);
