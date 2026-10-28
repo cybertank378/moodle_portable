@@ -7,8 +7,11 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-pub const PRIMARY_VALIDATION_ENDPOINT: &str = "https://aksaventra.ai.id/api/v1/validate-key";
-pub const FALLBACK_VALIDATION_ENDPOINT: &str = "https://aksaventra.ai.id/api/v1/engine/validate";
+pub const PRIMARY_VALIDATION_ENDPOINT: &str = "https://aksaventra.ai.id/api/v1/validate";
+pub const FALLBACK_VALIDATION_ENDPOINTS: [&str; 2] = [
+    "https://aksaventra.ai.id/api/v1/validate-key",
+    "https://aksaventra.ai.id/api/v1/engine/validate",
+];
 pub const SECRET_SALT: &str = "AKSAVENTRA_PORTABLE_CORE_2026_SALT";
 pub const LICENSE_FILENAME: &str = "serial_key.lic";
 pub const LEGACY_LICENSE_FILENAME: &str = "aksaventra.lic";
@@ -124,7 +127,12 @@ impl SecurityManager {
             });
         }
 
-        println!("[AKSAVENTRA] Memvalidasi lisensi ke aksaventra.ai.id...");
+        let custom_endpoint = std::env::var("AKSAVENTRA_API_URL").ok();
+        let target_endpoint = custom_endpoint
+            .as_deref()
+            .unwrap_or(PRIMARY_VALIDATION_ENDPOINT);
+
+        println!("[AKSAVENTRA] Memvalidasi lisensi ke {}...", target_endpoint);
         println!("[AKSAVENTRA] Perangkat HWID: {}", hwid);
 
         let client = Client::builder()
@@ -138,30 +146,21 @@ impl SecurityManager {
         };
 
         // Kirim request ke endpoint validasi utama, jika gagal/404 coba endpoint fallback
-        let response = match client
-            .post(PRIMARY_VALIDATION_ENDPOINT)
-            .json(&payload)
-            .send()
-            .await
-        {
-            Ok(resp) if resp.status().is_success() => Ok(resp),
-            Ok(resp) if resp.status().as_u16() == 404 => {
-                // Coba fallback endpoint
-                client
-                    .post(FALLBACK_VALIDATION_ENDPOINT)
-                    .json(&payload)
-                    .send()
-                    .await
-            }
-            Ok(resp) => Ok(resp),
-            Err(e) => {
-                // Coba fallback jika jaringan error ke primary
-                match client.post(FALLBACK_VALIDATION_ENDPOINT).json(&payload).send().await {
-                    Ok(resp) => Ok(resp),
-                    Err(_) => Err(e),
+        let mut response = client.post(target_endpoint).json(&payload).send().await;
+
+        if custom_endpoint.is_none() {
+            if response.is_err() || response.as_ref().map(|r| r.status().as_u16() == 404).unwrap_or(false) {
+                for fallback in FALLBACK_VALIDATION_ENDPOINTS.iter() {
+                    let fallback_res = client.post(*fallback).json(&payload).send().await;
+                    if let Ok(resp) = fallback_res {
+                        if resp.status().is_success() {
+                            response = Ok(resp);
+                            break;
+                        }
+                    }
                 }
             }
-        };
+        }
 
         let response = response.context(
             "Gagal terhubung ke server lisensi aksaventra.ai.id. Pastikan koneksi internet aktif.",
