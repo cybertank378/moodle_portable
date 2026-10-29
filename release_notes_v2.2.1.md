@@ -26,6 +26,10 @@ Pembaruan ini menambahkan **Auto-Hardware Recommendation Engine** (otomatis meny
 - Bebas dari hardcoded absolute path; `extension_dir = "ext"` dan `$CFG->dataroot = dirname(__DIR__) . '/moodledata'` menjamin aplikasi dapat berjalan dari drive atau folder mana pun.
 - Deteksi IP LAN host otomatis (`get_active_local_ip`) sehingga siswa dapat langsung mengakses via Wi-Fi/LAN serentak tanpa looping redirect.
 
+### 4. 🛡️ JSON Payload Lisensi & Vault Fallback Key Resolution
+- **Payload Request & Respon Terstandarisasi**: Engine otomatis mengirimkan `serial_key`, `hwid`, dan `engine_version` (`vX.Y.Z`) ke server lisensi, serta mendukung penuh struktur respon `valid`, `message`, `client_name`, `vault_secret`, dan `expires_at`.
+- **Seamless Vault Decryption**: Mendukung resolusi fallback master key untuk memastikan kontainer brankas awal langsung dapat dibuka dan otomatis dienkripsi kembali menggunakan kunci lisensi instansi saat shutdown.
+
 ---
 
 ## 📦 Berkas Distribusi (Assets)
