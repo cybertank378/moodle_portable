@@ -71,16 +71,17 @@ Engine akan secara otomatis melakukan handshake pengecekan versi ke endpoint ser
 ---
 
 ## 4. Task List Implementasi (Engine Klien)
-- [ ] Buat modul baru `src/updater.rs` dan daftarkan di `src/main.rs`.
-- [ ] Implementasikan fungsi `check_for_updates(&client, current_version, api_url)` dengan timeout singkat (maksimal 3-5 detik) agar tidak menghambat startup offline.
-- [ ] Tambahkan pembanding versi Semantic Versioning (*SemVer comparison* `vX.Y.Z`).
-- [ ] Implementasikan pengunduhan biner `download_update_binary()` menggunakan `reqwest` stream dengan progress bar interaktif (`indicatif`).
-- [ ] Validasi integritas biner yang diunduh dengan algoritma hashing `sha2::Sha256` terhadap `checksum_sha256` dari server.
-- [ ] Implementasikan strategi penggantian biner atomik pada Windows:
+- [x] Buat modul baru `src/updater.rs` dan daftarkan di `src/main.rs`.
+- [x] Implementasikan fungsi `check_for_updates(&client, current_version, api_url)` dengan timeout singkat (maksimal 3-5 detik) agar tidak menghambat startup offline.
+- [x] Tambahkan pembanding versi Semantic Versioning (*SemVer comparison* `vX.Y.Z`).
+- [x] Implementasikan pengunduhan biner `download_update_binary()` menggunakan `reqwest` stream dengan progress bar interaktif (`indicatif`).
+- [x] Validasi integritas biner yang diunduh dengan algoritma hashing `sha2::Sha256` terhadap `checksum_sha256` dari server.
+- [x] Implementasikan strategi penggantian biner atomik pada Windows:
   - Menggunakan teknik `self-replace` / rename biner aktif menjadi `aksaventra_engine.old` lalu menamai biner baru menjadi `aksaventra_engine.exe`.
   - Pembersihan berkas `*.old` otomatis saat startup berikutnya.
-- [ ] Berikan opsi flag CLI `--skip-update` atau `--check-update-only`.
-- [ ] Sediakan unit test untuk:
+- [x] Berikan opsi flag CLI `--skip-update` atau `--check-update`.
+- [x] Sediakan unit test untuk:
   - Parsing respon JSON updater.
   - Perbandingan versi SemVer.
   - Verifikasi checksum SHA-256.
+
