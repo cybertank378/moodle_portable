@@ -4,12 +4,14 @@ mod network;
 mod paths;
 mod process;
 mod security;
+mod updater;
 
 use anyhow::Result;
 use container::VaultContainer;
 use paths::PortablePaths;
 use process::ServiceOrchestrator;
 use security::SecurityManager;
+use updater::AutoUpdater;
 use std::env;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -27,6 +29,8 @@ fn print_help() {
     println!("  -p, --port <PORT>                  Tentukan port lokal khusus (default: 8080)");
     println!("  --encrypt, --pack                  Kemas folder mentah ke dalam brankas terenkripsi (.pak)");
     println!("  --skip-browser                     Jangan buka peramban secara otomatis");
+    println!("  --check-update                     Periksa ketersediaan pembaruan mesin tanpa menyalakan server");
+    println!("  --skip-update                      Lewati pengecekan pembaruan otomatis");
     println!("  -h, --help                         Tampilkan bantuan ini");
 }
 
@@ -58,7 +62,20 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // 2. Tentukan Port Bebas (Network Port Discovery)
+    // 2. Pemeriksaan Auto-Updater (Non-blocking / Background check)
+    let _ = AutoUpdater::perform_update_check_and_apply(
+        &paths.base_dir,
+        &security.serial_key,
+        &security.hwid,
+        &args,
+    )
+    .await;
+
+    if args.iter().any(|arg| arg == "--check-update") {
+        return Ok(());
+    }
+
+    // 3. Tentukan Port Bebas (Network Port Discovery)
     let mut preferred_port = DEFAULT_PORT;
     if let Some(pos) = args.iter().position(|a| a == "-p" || a == "--port") {
         if let Some(val) = args.get(pos + 1) {
