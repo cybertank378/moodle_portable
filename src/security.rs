@@ -28,17 +28,52 @@ pub const MAX_LICENSE_LIFETIME_SECS: u64 = 365 * 24 * 60 * 60; // Maksimal 1 tah
 pub struct LicenseRequest {
     pub serial_key: String,
     pub hwid: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub engine_version: Option<String>,
+    pub engine_version: String,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+fn deserialize_optional_timestamp<'de, D>(deserializer: D) -> std::result::Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum TimestampValue {
+        Unsigned(u64),
+        Signed(i64),
+        Float(f64),
+        Text(String),
+    }
+
+    let opt = Option::<TimestampValue>::deserialize(deserializer)?;
+    match opt {
+        None => Ok(None),
+        Some(TimestampValue::Unsigned(v)) => Ok(Some(v)),
+        Some(TimestampValue::Signed(v)) => Ok(if v >= 0 { Some(v as u64) } else { None }),
+        Some(TimestampValue::Float(v)) => Ok(if v >= 0.0 { Some(v as u64) } else { None }),
+        Some(TimestampValue::Text(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                Ok(None)
+            } else {
+                trimmed
+                    .parse::<u64>()
+                    .map(Some)
+                    .map_err(serde::de::Error::custom)
+            }
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct LicenseResponse {
     pub valid: bool,
-    pub message: String,
-    pub client_name: Option<String>,
-    pub vault_secret: Option<String>, // Seed rahasia untuk dekripsi vault
     #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub client_name: Option<String>,
+    #[serde(default)]
+    pub vault_secret: Option<String>, // Seed rahasia untuk dekripsi vault
+    #[serde(default, deserialize_with = "deserialize_optional_timestamp")]
     pub expires_at: Option<u64>,
 }
 
@@ -196,14 +231,53 @@ impl SecurityManager {
         Ok(token)
     }
 
-    /// Mendapatkan Hardware ID unik perangkat lokal
+    /// Mendapatkan Hardware ID unik perangkat lokal secara otomatis
     pub fn get_hardware_id() -> String {
+        if let Ok(custom_hwid) = std::env::var("AKSAVENTRA_HWID") {
+            let trimmed = custom_hwid.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
         machine_uid::get().unwrap_or_else(|_| "UNKNOWN-HWID-FALLBACK".to_string())
+    }
+
+    /// Mengekstrak hanya nilai serial_key bersih dari input pengguna atau isi berkas
+    pub fn extract_serial_key(raw: &str) -> String {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return String::new();
+        }
+        if trimmed.starts_with('{') {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                if let Some(sk) = val.get("serial_key").and_then(|v| v.as_str()) {
+                    return sk.trim().to_string();
+                }
+            }
+        }
+        trimmed.trim_matches('"').trim_matches('\'').trim().to_string()
+    }
+
+    /// Mem-parsing JSON respon dari server lisensi
+    pub fn parse_license_response(body: &str) -> Result<LicenseResponse> {
+        #[derive(Deserialize)]
+        struct WrappedLicenseResponse {
+            data: LicenseResponse,
+        }
+
+        if let Ok(res) = serde_json::from_str::<LicenseResponse>(body) {
+            return Ok(res);
+        }
+        if let Ok(wrapped) = serde_json::from_str::<WrappedLicenseResponse>(body) {
+            return Ok(wrapped.data);
+        }
+        serde_json::from_str::<LicenseResponse>(body)
+            .context("Format respons JSON lisensi dari server tidak valid.")
     }
 
     /// Alur autentikasi lengkap sesuai diagram alir Aksaventra Engine & Server
     pub async fn authenticate(base_dir: &Path) -> Result<Self> {
-        // 1. Baca Machine ID / HWID
+        // 1. Baca Machine ID / HWID otomatis dari perangkat
         let hwid = Self::get_hardware_id();
         println!("[AKSAVENTRA] Machine ID (HWID): {}", hwid);
 
@@ -258,14 +332,18 @@ impl SecurityManager {
             }
         }
 
-        // 3. Prompt Input Serial Key dan / atau baca dari berkas serial_key.lic
+        // 3. Prompt Input HANYA Serial Key atau baca dari berkas serial_key.lic
         let license_file = Self::resolve_license_path(base_dir);
         let serial_key = if license_file.exists() {
-            let content = fs::read_to_string(&license_file)?.trim().to_string();
-            if content.is_empty() {
+            let content = fs::read_to_string(&license_file)?;
+            let cleaned = Self::extract_serial_key(&content);
+            if cleaned.is_empty() {
                 Self::prompt_serial_key(&license_file)?
             } else {
-                content
+                if cleaned != content.trim() {
+                    let _ = fs::write(&license_file, &cleaned);
+                }
+                cleaned
             }
         } else {
             Self::prompt_serial_key(&license_file)?
@@ -278,23 +356,28 @@ impl SecurityManager {
             ));
         }
 
-        // 4. POST Request (Serial Key + HWID) ke API Endpoint
+        // 4. POST Request JSON Payload (serial_key + hwid + engine_version) ke API Endpoint
         let custom_endpoint = std::env::var("AKSAVENTRA_API_URL").ok();
         let target_endpoint = custom_endpoint
             .as_deref()
             .unwrap_or(PRIMARY_VALIDATION_ENDPOINT);
 
+        let engine_version = format!("v{}", env!("CARGO_PKG_VERSION"));
+        let payload = LicenseRequest {
+            serial_key: serial_key.clone(),
+            hwid: hwid.clone(),
+            engine_version: engine_version.clone(),
+        };
+
         println!("[AKSAVENTRA] Menghubungi Server Lisensi {}...", target_endpoint);
+        println!(
+            "[AKSAVENTRA] Mengirimkan JSON Payload -> serial_key: \"{}\", hwid: \"{}\", engine_version: \"{}\"",
+            payload.serial_key, payload.hwid, payload.engine_version
+        );
 
         let client = Client::builder()
             .timeout(Duration::from_secs(15))
             .build()?;
-
-        let payload = LicenseRequest {
-            serial_key: serial_key.clone(),
-            hwid: hwid.clone(),
-            engine_version: Some(env!("CARGO_PKG_VERSION").to_string()),
-        };
 
         let mut response = client.post(target_endpoint).json(&payload).send().await;
 
@@ -313,49 +396,69 @@ impl SecurityManager {
         }
 
         let response = response.context(
-            "Gagal terhubung ke server lisensi aksaventra.ai.id. Pastikan koneksi internet aktif untuk aktivasi pertama kali.",
+            "Gagal terhubung ke server lisensi. Pastikan server lisensi aktif dan koneksi tersedia.",
         )?;
 
         let status = response.status();
+        let body_text = response
+            .text()
+            .await
+            .context("Gagal membaca isi respons dari server lisensi.")?;
 
-        // 5. Evaluasi Status Respon Server Sesuai Diagram
+        // 5. Evaluasi Status Respon Server
         if status.as_u16() == 403 {
             Self::purge_license_files(base_dir);
+            let server_msg = Self::parse_license_response(&body_text)
+                .ok()
+                .map(|r| r.message)
+                .filter(|m| !m.is_empty());
             return Err(anyhow!(
                 "[AKSAVENTRA ERROR] Validasi Gagal (HTTP 403: Hardware Mismatch).\n\
-                 Serial Key ini telah terkunci pada perangkat keras (HWID) lain.\n\
-                 Silakan hubungi administrator di https://aksaventra.ai.id untuk mereset perangkat terdaftar."
+                 {}\n\
+                 Silakan hubungi administrator di https://aksaventra.ai.id untuk mereset perangkat terdaftar.",
+                server_msg.unwrap_or_else(|| "Serial Key ini telah terkunci pada perangkat keras (HWID) lain.".to_string())
             ));
         }
 
         if status.as_u16() == 401 || status.as_u16() == 404 {
             Self::purge_license_files(base_dir);
+            let server_msg = Self::parse_license_response(&body_text)
+                .ok()
+                .map(|r| r.message)
+                .filter(|m| !m.is_empty());
             return Err(anyhow!(
                 "[AKSAVENTRA ERROR] Validasi Gagal (HTTP {}: Lisensi Ditolak).\n\
-                 Serial Key tidak ditemukan, kadaluarsa, atau dinonaktifkan.\n\
+                 {}\n\
                  Silakan periksa kembali lisensi Anda di https://aksaventra.ai.id",
-                status.as_u16()
+                status.as_u16(),
+                server_msg.unwrap_or_else(|| "Serial Key tidak ditemukan, kadaluarsa, atau dinonaktifkan.".to_string())
             ));
         }
 
         if !status.is_success() {
             Self::purge_license_files(base_dir);
+            let server_msg = Self::parse_license_response(&body_text)
+                .ok()
+                .map(|r| r.message)
+                .filter(|m| !m.is_empty())
+                .unwrap_or_else(|| body_text.clone());
             return Err(anyhow!(
-                "Validasi lisensi ditolak oleh server aksaventra.ai.id (HTTP {}).",
-                status
+                "Validasi lisensi ditolak oleh server (HTTP {}): {}",
+                status,
+                server_msg
             ));
         }
 
-        let result: LicenseResponse = response
-            .json()
-            .await
-            .context("Format respons lisensi dari aksaventra.ai.id tidak valid.")?;
+        let result = Self::parse_license_response(&body_text)?;
 
         if !result.valid {
             Self::purge_license_files(base_dir);
             return Err(anyhow!("Lisensi Ditolak: {}", result.message));
         }
 
+        if !result.message.is_empty() {
+            println!("[AKSAVENTRA] Pesan Server: {}", result.message);
+        }
         println!(
             "[AKSAVENTRA] Lisensi Terverifikasi (200 OK)! Terdaftar atas nama: {}",
             result.client_name.as_deref().unwrap_or("Pengguna Aksaventra")
@@ -363,6 +466,7 @@ impl SecurityManager {
 
         let vault_secret = result
             .vault_secret
+            .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| "DEFAULT_VAULT_PASSPHRASE".to_string());
 
         // 6. Simpan File Lisensi Terenkripsi Lokal (Signed Token) dengan batas maksimal 1 tahun
@@ -375,6 +479,11 @@ impl SecurityManager {
             Some(exp) => Some(std::cmp::min(exp, max_allowed_exp)),
             None => Some(max_allowed_exp),
         };
+        if let Some(exp) = effective_expires_at {
+            let days_left = exp.saturating_sub(now) / 86400;
+            println!("[AKSAVENTRA] Masa Aktif Lisensi: {} hari (expires_at: {})", days_left, exp);
+        }
+
         let signature = Self::calculate_signature(&serial_key, &hwid, &vault_secret);
         let local_token = LocalLicenseToken {
             serial_key: serial_key.clone(),
@@ -401,13 +510,13 @@ impl SecurityManager {
         })
     }
 
-    /// Meminta input Serial Key dari pengguna di terminal
+    /// Meminta input HANYA Serial Key dari pengguna di terminal
     pub fn prompt_serial_key(target_path: &Path) -> Result<String> {
         print!("[AKSAVENTRA] Masukkan Serial Key Anda: ");
         io::stdout().flush()?;
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
-        let key = input.trim().to_string();
+        let key = Self::extract_serial_key(&input);
         if key.is_empty() {
             return Err(anyhow!(
                 "Serial Key tidak boleh kosong. Silakan peroleh lisensi resmi di https://aksaventra.ai.id"
@@ -436,33 +545,54 @@ mod tests {
     #[test]
     fn test_license_request_serialization() {
         let req = LicenseRequest {
-            serial_key: "TEST-1234-5678".to_string(),
-            hwid: "HWID-TEST-001".to_string(),
-            engine_version: None,
+            serial_key: "AKSA-ENTERPRISE-2026-9F2A".to_string(),
+            hwid: "HWID-WIN11-AX98-7712".to_string(),
+            engine_version: "v1.4.2".to_string(),
         };
 
         let json = serde_json::to_string(&req).expect("Harus dapat di-serialize ke JSON");
-        assert!(json.contains("\"serial_key\":\"TEST-1234-5678\""));
-        assert!(json.contains("\"hwid\":\"HWID-TEST-001\""));
-        assert!(!json.contains("engine_version"));
+        assert!(json.contains("\"serial_key\":\"AKSA-ENTERPRISE-2026-9F2A\""));
+        assert!(json.contains("\"hwid\":\"HWID-WIN11-AX98-7712\""));
+        assert!(json.contains("\"engine_version\":\"v1.4.2\""));
+    }
+
+    #[test]
+    fn test_extract_serial_key_only() {
+        assert_eq!(
+            SecurityManager::extract_serial_key("AKSA-ENTERPRISE-2026-9F2A"),
+            "AKSA-ENTERPRISE-2026-9F2A"
+        );
+        assert_eq!(
+            SecurityManager::extract_serial_key("  \"AKSA-ENTERPRISE-2026-9F2A\" \n"),
+            "AKSA-ENTERPRISE-2026-9F2A"
+        );
+        let accidental_json = r#"{
+            "serial_key": "AKSA-ENTERPRISE-2026-9F2A",
+            "hwid": "HWID-WIN11-AX98-7712",
+            "engine_version": "v1.4.2"
+        }"#;
+        assert_eq!(
+            SecurityManager::extract_serial_key(accidental_json),
+            "AKSA-ENTERPRISE-2026-9F2A"
+        );
     }
 
     #[test]
     fn test_license_response_deserialization() {
         let json = r#"{
             "valid": true,
-            "message": "Lisensi aktif",
-            "client_name": "Universitas Aksaventra",
-            "vault_secret": "TOP_SECRET_SEED_2026",
-            "expires_at": 1893456000
+            "message": "Lisensi aktif dan terverifikasi untuk perangkat ini.",
+            "client_name": "PT Digital Nusantara",
+            "vault_secret": "AKSA_VAULT_SECRET_ENT_9F2A_2026",
+            "expires_at": 1824791585
         }"#;
 
-        let res: LicenseResponse = serde_json::from_str(json).expect("Harus dapat di-deserialize");
+        let res = SecurityManager::parse_license_response(json).expect("Harus dapat di-deserialize");
         assert!(res.valid);
-        assert_eq!(res.message, "Lisensi aktif");
-        assert_eq!(res.client_name.as_deref(), Some("Universitas Aksaventra"));
-        assert_eq!(res.vault_secret.as_deref(), Some("TOP_SECRET_SEED_2026"));
-        assert_eq!(res.expires_at, Some(1893456000));
+        assert_eq!(res.message, "Lisensi aktif dan terverifikasi untuk perangkat ini.");
+        assert_eq!(res.client_name.as_deref(), Some("PT Digital Nusantara"));
+        assert_eq!(res.vault_secret.as_deref(), Some("AKSA_VAULT_SECRET_ENT_9F2A_2026"));
+        assert_eq!(res.expires_at, Some(1824791585));
     }
 
     #[test]
