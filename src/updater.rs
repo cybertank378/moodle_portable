@@ -218,7 +218,7 @@ impl AutoUpdater {
             .parent()
             .context("Gagal menentukan direktori executable")?;
 
-        let old_binary_backup = current_dir.join("aksaventra_engine.old");
+        let old_binary_backup = current_dir.join("aksaventra_engine.old.exe");
 
         // 1. Bersihkan backup lama jika ada
         if old_binary_backup.exists() {
@@ -241,7 +241,20 @@ impl AutoUpdater {
         }
 
         println!("[UPDATE] Biner mesin berhasil diperbarui secara atomik!");
-        println!("[UPDATE] Memulai ulang proses dengan biner terbaru...");
+        println!("[UPDATE] Pengunduhan biner pembaruan selesai dan integritas terverifikasi!");
+        println!("[UPDATE] Menjalankan executable baru dan menghapus executable lama...");
+
+        // Jalankan background worker untuk menghapus file executable lama segera setelah proses lama terminate
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            let old_path_str = old_binary_backup.to_string_lossy().to_string();
+            let _ = std::process::Command::new("cmd")
+                .args(["/c", &format!("ping 127.0.0.1 -n 2 >nul & del /f /q \"{}\"", old_path_str)])
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn();
+        }
 
         // 4. Siapkan argumen restart (pastikan menyertakan flag --skip-update agar tidak terjadi loop)
         let mut restart_args: Vec<String> = raw_args.iter().cloned().skip(1).collect();
@@ -255,7 +268,8 @@ impl AutoUpdater {
             .spawn()
             .with_context(|| format!("Gagal meluncurkan biner baru {:?}", current_exe))?;
 
-        // 6. Keluar dari proses lama dengan aman
+        // 6. Matikan proses lama seketika itu juga
+        println!("[UPDATE] Proses lama dimatikan seketika. Beralih ke versi terbaru.");
         std::process::exit(0);
     }
 
@@ -319,6 +333,9 @@ impl AutoUpdater {
         };
 
         let temp_download_path = base_dir.join("aksaventra_engine.new");
+
+        // Pastikan tidak ada daemon server yang aktif selama proses unduh
+        crate::process::ServiceOrchestrator::kill_lingering_daemons();
 
         // 2. Unduh biner baru
         if let Err(e) = Self::download_binary(download_url, &temp_download_path).await {

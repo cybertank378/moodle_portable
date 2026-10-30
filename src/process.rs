@@ -247,6 +247,14 @@ impl ServiceOrchestrator {
             .with_context(|| format!("Gagal membuka browser untuk URL: {}", url))?;
         Ok(())
     }
+
+    /// Memastikan tidak ada daemon server yang menggantung di latar belakang
+    pub fn kill_lingering_daemons() {
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "nginx.exe", "/IM", "php-cgi.exe", "/T"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
 }
 
 #[cfg(test)]
