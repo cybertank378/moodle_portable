@@ -29,7 +29,12 @@ pub struct LicenseRequest {
     pub serial_key: String,
     pub hwid: String,
     pub engine_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_ip: Option<String>,
 }
+
+#[allow(dead_code)]
+pub type ValidateLicenseRequest = LicenseRequest;
 
 fn deserialize_optional_timestamp<'de, D>(deserializer: D) -> std::result::Result<Option<u64>, D::Error>
 where
@@ -70,12 +75,19 @@ pub struct LicenseResponse {
     #[serde(default)]
     pub message: String,
     #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
     pub client_name: Option<String>,
     #[serde(default)]
     pub vault_secret: Option<String>, // Seed rahasia untuk dekripsi vault
     #[serde(default, deserialize_with = "deserialize_optional_timestamp")]
     pub expires_at: Option<u64>,
 }
+
+#[allow(dead_code)]
+pub type ValidateLicenseResponse = LicenseResponse;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct LocalLicenseToken {
@@ -363,28 +375,52 @@ impl SecurityManager {
             .unwrap_or(PRIMARY_VALIDATION_ENDPOINT);
 
         let engine_version = format!("v{}", env!("CARGO_PKG_VERSION"));
+        let public_ip = Self::fetch_public_ip().await;
+        if let Some(ref ip) = public_ip {
+            println!("[AKSAVENTRA] IP Publik Terdeteksi: {}", ip);
+        }
+
         let payload = LicenseRequest {
             serial_key: serial_key.clone(),
             hwid: hwid.clone(),
             engine_version: engine_version.clone(),
+            public_ip,
         };
 
         println!("[AKSAVENTRA] Menghubungi Server Lisensi {}...", target_endpoint);
-        println!(
-            "[AKSAVENTRA] Mengirimkan JSON Payload -> serial_key: \"{}\", hwid: \"{}\", engine_version: \"{}\"",
-            payload.serial_key, payload.hwid, payload.engine_version
-        );
+        match &payload.public_ip {
+            Some(ip) => println!(
+                "[AKSAVENTRA] Mengirimkan JSON Payload -> serial_key: \"{}\", hwid: \"{}\", engine_version: \"{}\", public_ip: \"{}\"",
+                payload.serial_key, payload.hwid, payload.engine_version, ip
+            ),
+            None => println!(
+                "[AKSAVENTRA] Mengirimkan JSON Payload -> serial_key: \"{}\", hwid: \"{}\", engine_version: \"{}\"",
+                payload.serial_key, payload.hwid, payload.engine_version
+            ),
+        }
 
         let client = Client::builder()
             .timeout(Duration::from_secs(15))
             .build()?;
 
-        let mut response = client.post(target_endpoint).json(&payload).send().await;
+        let mut response = client
+            .post(target_endpoint)
+            .header("Content-Type", "application/json")
+            .header("User-Agent", format!("aksaventra_engine/{}", engine_version))
+            .json(&payload)
+            .send()
+            .await;
 
         if custom_endpoint.is_none() {
             if response.is_err() || response.as_ref().map(|r| r.status().as_u16() == 404).unwrap_or(false) {
                 for fallback in FALLBACK_VALIDATION_ENDPOINTS.iter() {
-                    let fallback_res = client.post(*fallback).json(&payload).send().await;
+                    let fallback_res = client
+                        .post(*fallback)
+                        .header("Content-Type", "application/json")
+                        .header("User-Agent", format!("aksaventra_engine/{}", engine_version))
+                        .json(&payload)
+                        .send()
+                        .await;
                     if let Ok(resp) = fallback_res {
                         if resp.status().is_success() {
                             response = Ok(resp);
@@ -525,6 +561,62 @@ impl SecurityManager {
         fs::write(target_path, &key)?;
         Ok(key)
     }
+
+    /// Mendapatkan Alamat IP Publik Mesin (dengan fallback graceful jika offline/timeout)
+    pub async fn fetch_public_ip() -> Option<String> {
+        fetch_public_ip().await
+    }
+}
+
+/// Mendapatkan Alamat IP Publik Mesin (dengan fallback graceful jika offline/timeout)
+pub async fn fetch_public_ip() -> Option<String> {
+    if let Ok(custom_ip) = std::env::var("AKSAVENTRA_PUBLIC_IP") {
+        let trimmed = custom_ip.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .ok()?;
+
+    // Mengambil IP publik via ipify (atau endpoint resolver)
+    match client.get("https://api.ipify.org").send().await {
+        Ok(resp) => resp.text().await.ok().map(|ip| ip.trim().to_string()).filter(|ip| !ip.is_empty()),
+        Err(_) => None,
+    }
+}
+
+/// Mengirimkan Request Validasi ke Dashboard Aksaventra
+#[allow(dead_code)]
+pub async fn send_license_validation(
+    dashboard_url: &str,
+    serial_key: &str,
+    hwid: &str,
+    version: &str,
+) -> Result<LicenseResponse, reqwest::Error> {
+    let public_ip = fetch_public_ip().await;
+    let payload = LicenseRequest {
+        serial_key: serial_key.to_string(),
+        hwid: hwid.to_string(),
+        engine_version: version.to_string(),
+        public_ip,
+    };
+    let client = Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?;
+    let url = format!("{}/api/v1/validate", dashboard_url.trim_end_matches('/'));
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("User-Agent", format!("aksaventra_engine/{}", version))
+        .json(&payload)
+        .send()
+        .await?;
+    let result = response.json::<LicenseResponse>().await?;
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -548,12 +640,31 @@ mod tests {
             serial_key: "AKSA-ENTERPRISE-2026-9F2A".to_string(),
             hwid: "HWID-WIN11-AX98-7712".to_string(),
             engine_version: "v1.4.2".to_string(),
+            public_ip: Some("103.145.22.88".to_string()),
         };
 
         let json = serde_json::to_string(&req).expect("Harus dapat di-serialize ke JSON");
         assert!(json.contains("\"serial_key\":\"AKSA-ENTERPRISE-2026-9F2A\""));
         assert!(json.contains("\"hwid\":\"HWID-WIN11-AX98-7712\""));
         assert!(json.contains("\"engine_version\":\"v1.4.2\""));
+        assert!(json.contains("\"public_ip\":\"103.145.22.88\""));
+
+        let req_none = LicenseRequest {
+            serial_key: "AKSA-ENTERPRISE-2026-9F2A".to_string(),
+            hwid: "HWID-WIN11-AX98-7712".to_string(),
+            engine_version: "v1.4.2".to_string(),
+            public_ip: None,
+        };
+        let json_none = serde_json::to_string(&req_none).expect("Harus dapat di-serialize ke JSON");
+        assert!(!json_none.contains("\"public_ip\""));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_public_ip_env_override() {
+        std::env::set_var("AKSAVENTRA_PUBLIC_IP", "203.0.113.195");
+        let ip = fetch_public_ip().await;
+        assert_eq!(ip.as_deref(), Some("203.0.113.195"));
+        std::env::remove_var("AKSAVENTRA_PUBLIC_IP");
     }
 
     #[test]
@@ -582,6 +693,8 @@ mod tests {
         let json = r#"{
             "valid": true,
             "message": "Lisensi aktif dan terverifikasi untuk perangkat ini.",
+            "token": "TOKEN_JWT_123",
+            "status": "active",
             "client_name": "PT Digital Nusantara",
             "vault_secret": "AKSA_VAULT_SECRET_ENT_9F2A_2026",
             "expires_at": 1824791585
@@ -590,6 +703,8 @@ mod tests {
         let res = SecurityManager::parse_license_response(json).expect("Harus dapat di-deserialize");
         assert!(res.valid);
         assert_eq!(res.message, "Lisensi aktif dan terverifikasi untuk perangkat ini.");
+        assert_eq!(res.token.as_deref(), Some("TOKEN_JWT_123"));
+        assert_eq!(res.status.as_deref(), Some("active"));
         assert_eq!(res.client_name.as_deref(), Some("PT Digital Nusantara"));
         assert_eq!(res.vault_secret.as_deref(), Some("AKSA_VAULT_SECRET_ENT_9F2A_2026"));
         assert_eq!(res.expires_at, Some(1824791585));
