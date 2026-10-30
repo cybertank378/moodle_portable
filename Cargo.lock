@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "aksaventra_engine"
-version = "2.2.2"
+version = "2.2.3"
 dependencies = [
  "aes-gcm",
  "anyhow",
