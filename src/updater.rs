@@ -9,7 +9,9 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Duration;
 
-pub const DEFAULT_UPDATER_ENDPOINT: &str = "http://localhost:3000/api/v1/updater/version";
+#[allow(dead_code)]
+pub const DEFAULT_UPDATER_ENDPOINT: &str = "https://aksaventra.ai.id/api/v1/updater/version";
+#[allow(dead_code)]
 pub const FALLBACK_UPDATER_ENDPOINT: &str = "https://aksaventra.ai.id/api/v1/updater/version";
 pub const UPDATER_TIMEOUT_SECS: u64 = 4;
 
@@ -104,7 +106,7 @@ impl AutoUpdater {
         }
     }
 
-    /// Mendapatkan endpoint validasi versi updater dari environment atau default
+    /// Mendapatkan endpoint validasi versi updater dari environment atau basis terpadu
     pub fn resolve_updater_endpoint() -> String {
         if let Ok(url) = env::var("AKSAVENTRA_UPDATER_URL") {
             let trimmed = url.trim();
@@ -112,13 +114,7 @@ impl AutoUpdater {
                 return trimmed.to_string();
             }
         }
-        if let Ok(api_url) = env::var("AKSAVENTRA_API_URL") {
-            let trimmed = api_url.trim();
-            if trimmed.contains("/validate") {
-                return trimmed.replace("/validate", "/updater/version");
-            }
-        }
-        DEFAULT_UPDATER_ENDPOINT.to_string()
+        format!("{}/api/v1/updater/version", crate::security::SecurityManager::get_api_base_url())
     }
 
     /// Memeriksa ketersediaan update ke server secara non-blocking / fail-open
@@ -142,8 +138,11 @@ impl AutoUpdater {
 
         let mut response = client.post(&target_endpoint).json(&payload).send().await;
 
-        if response.is_err() && target_endpoint == DEFAULT_UPDATER_ENDPOINT {
-            response = client.post(FALLBACK_UPDATER_ENDPOINT).json(&payload).send().await;
+        if response.is_err() && target_endpoint.contains("aksaventra.ai.id") {
+            let fallback = "https://aksaventra.ai.id/api/v1/updater/version";
+            if target_endpoint != fallback {
+                response = client.post(fallback).json(&payload).send().await;
+            }
         }
 
         let response = match response {
@@ -439,6 +438,32 @@ mod tests {
             Some("4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945")
         );
         assert_eq!(info.published_at, Some(1824792000));
+    }
+
+    #[test]
+    fn test_resolve_updater_endpoint_derives_from_base_url() {
+        std::env::remove_var("AKSAVENTRA_API_URL");
+        std::env::remove_var("AKSAVENTRA_UPDATER_URL");
+        assert_eq!(
+            AutoUpdater::resolve_updater_endpoint(),
+            "https://aksaventra.ai.id/api/v1/updater/version"
+        );
+
+        std::env::set_var("AKSAVENTRA_API_URL", "http://localhost:3000");
+        assert_eq!(
+            AutoUpdater::resolve_updater_endpoint(),
+            "http://localhost:3000/api/v1/updater/version"
+        );
+
+        // Custom override via AKSAVENTRA_UPDATER_URL takes priority if set
+        std::env::set_var("AKSAVENTRA_UPDATER_URL", "http://custom-updater.local/version");
+        assert_eq!(
+            AutoUpdater::resolve_updater_endpoint(),
+            "http://custom-updater.local/version"
+        );
+
+        std::env::remove_var("AKSAVENTRA_API_URL");
+        std::env::remove_var("AKSAVENTRA_UPDATER_URL");
     }
 
     #[test]
