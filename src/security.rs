@@ -12,7 +12,10 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+pub const DEFAULT_API_BASE_URL: &str = "https://aksaventra.ai.id";
+#[allow(dead_code)]
 pub const PRIMARY_VALIDATION_ENDPOINT: &str = "https://aksaventra.ai.id/api/v1/validate";
+#[allow(dead_code)]
 pub const FALLBACK_VALIDATION_ENDPOINTS: [&str; 2] = [
     "https://aksaventra.ai.id/api/v1/validate-key",
     "https://aksaventra.ai.id/api/v1/engine/validate",
@@ -369,10 +372,8 @@ impl SecurityManager {
         }
 
         // 4. POST Request JSON Payload (serial_key + hwid + engine_version) ke API Endpoint
-        let custom_endpoint = std::env::var("AKSAVENTRA_API_URL").ok();
-        let target_endpoint = custom_endpoint
-            .as_deref()
-            .unwrap_or(PRIMARY_VALIDATION_ENDPOINT);
+        let target_endpoint = Self::get_validation_endpoint();
+        let has_custom_base = std::env::var("AKSAVENTRA_API_URL").is_ok();
 
         let engine_version = format!("v{}", env!("CARGO_PKG_VERSION"));
         let public_ip = Self::fetch_public_ip().await;
@@ -411,11 +412,12 @@ impl SecurityManager {
             .send()
             .await;
 
-        if custom_endpoint.is_none() {
+        if !has_custom_base {
             if response.is_err() || response.as_ref().map(|r| r.status().as_u16() == 404).unwrap_or(false) {
-                for fallback in FALLBACK_VALIDATION_ENDPOINTS.iter() {
+                let fallbacks = Self::get_fallback_validation_endpoints();
+                for fallback in fallbacks.iter() {
                     let fallback_res = client
-                        .post(*fallback)
+                        .post(fallback)
                         .header("Content-Type", "application/json")
                         .header("User-Agent", format!("aksaventra_engine/{}", engine_version))
                         .json(&payload)
@@ -562,6 +564,37 @@ impl SecurityManager {
         Ok(key)
     }
 
+    /// Mendapatkan Base URL API terpadu (default https://aksaventra.ai.id atau dari env AKSAVENTRA_API_URL)
+    /// Menormalkan input: membersihkan trailing slash, serta path spesifik seperti /api/v1/validate atau /api/v1
+    /// sehingga pemanggil di seluruh engine cukup memanggil endpoint /api/v1/*
+    pub fn get_api_base_url() -> String {
+        let raw = std::env::var("AKSAVENTRA_API_URL")
+            .unwrap_or_else(|_| DEFAULT_API_BASE_URL.to_string());
+        let mut trimmed = raw.trim().trim_end_matches('/').to_string();
+        if trimmed.ends_with("/api/v1/validate") {
+            trimmed = trimmed.trim_end_matches("/api/v1/validate").to_string();
+        } else if trimmed.ends_with("/api/v1/updater/version") {
+            trimmed = trimmed.trim_end_matches("/api/v1/updater/version").to_string();
+        } else if trimmed.ends_with("/api/v1") {
+            trimmed = trimmed.trim_end_matches("/api/v1").to_string();
+        }
+        trimmed.trim_end_matches('/').to_string()
+    }
+
+    /// Mendapatkan endpoint validasi lisensi utama (/api/v1/validate)
+    pub fn get_validation_endpoint() -> String {
+        format!("{}/api/v1/validate", Self::get_api_base_url())
+    }
+
+    /// Mendapatkan daftar endpoint fallback validasi lisensi (/api/v1/validate-key & /api/v1/engine/validate)
+    pub fn get_fallback_validation_endpoints() -> Vec<String> {
+        let base = Self::get_api_base_url();
+        vec![
+            format!("{}/api/v1/validate-key", base),
+            format!("{}/api/v1/engine/validate", base),
+        ]
+    }
+
     /// Mendapatkan Alamat IP Publik Mesin (dengan fallback graceful jika offline/timeout)
     pub async fn fetch_public_ip() -> Option<String> {
         fetch_public_ip().await
@@ -665,6 +698,36 @@ mod tests {
         let ip = fetch_public_ip().await;
         assert_eq!(ip.as_deref(), Some("203.0.113.195"));
         std::env::remove_var("AKSAVENTRA_PUBLIC_IP");
+    }
+
+    #[test]
+    fn test_api_base_url_normalization_and_endpoints() {
+        // Test default
+        std::env::remove_var("AKSAVENTRA_API_URL");
+        assert_eq!(SecurityManager::get_api_base_url(), "https://aksaventra.ai.id");
+        assert_eq!(SecurityManager::get_validation_endpoint(), "https://aksaventra.ai.id/api/v1/validate");
+
+        // Test custom base without trailing slash
+        std::env::set_var("AKSAVENTRA_API_URL", "http://localhost:3000");
+        assert_eq!(SecurityManager::get_api_base_url(), "http://localhost:3000");
+        assert_eq!(SecurityManager::get_validation_endpoint(), "http://localhost:3000/api/v1/validate");
+
+        // Test custom base with trailing slash
+        std::env::set_var("AKSAVENTRA_API_URL", "http://localhost:3000/");
+        assert_eq!(SecurityManager::get_api_base_url(), "http://localhost:3000");
+        assert_eq!(SecurityManager::get_validation_endpoint(), "http://localhost:3000/api/v1/validate");
+
+        // Test custom base with /api/v1
+        std::env::set_var("AKSAVENTRA_API_URL", "http://localhost:3000/api/v1");
+        assert_eq!(SecurityManager::get_api_base_url(), "http://localhost:3000");
+        assert_eq!(SecurityManager::get_validation_endpoint(), "http://localhost:3000/api/v1/validate");
+
+        // Test custom base with full /api/v1/validate
+        std::env::set_var("AKSAVENTRA_API_URL", "http://localhost:3000/api/v1/validate");
+        assert_eq!(SecurityManager::get_api_base_url(), "http://localhost:3000");
+        assert_eq!(SecurityManager::get_validation_endpoint(), "http://localhost:3000/api/v1/validate");
+
+        std::env::remove_var("AKSAVENTRA_API_URL");
     }
 
     #[test]
