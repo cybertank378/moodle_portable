@@ -21,6 +21,7 @@ pub const FALLBACK_VALIDATION_ENDPOINTS: [&str; 2] = [
     "https://aksaventra.ai.id/api/v1/engine/validate",
 ];
 pub const SECRET_SALT: &str = "AKSAVENTRA_PORTABLE_CORE_2026_SALT";
+pub const PORTABLE_TOKEN_KEY: &str = "AKSAVENTRA_PORTABLE_STORAGE_KEY_2026";
 pub const LICENSE_FILENAME: &str = "serial_key.lic";
 pub const LOCAL_TOKEN_FILENAME: &str = "aksaventra.token";
 pub const LEGACY_LICENSE_FILENAME: &str = "aksaventra.lic";
@@ -162,10 +163,10 @@ impl SecurityManager {
         format!("{:x}", hasher.finalize())
     }
 
-    /// Menyimpan token lisensi terenkripsi ke media lokal (menggunakan kunci turunan HWID)
+    /// Menyimpan token lisensi terenkripsi ke media lokal (portabel tanpa penguncian HWID mesin)
     pub fn save_local_token(base_dir: &Path, token: &LocalLicenseToken) -> Result<()> {
         let json_bytes = serde_json::to_vec(token)?;
-        let key = Self::derive_key(&token.hwid, SECRET_SALT);
+        let key = Self::derive_key(PORTABLE_TOKEN_KEY, SECRET_SALT);
         let cipher = Aes256Gcm::new((&key).into());
         let mut nonce_bytes = [0u8; NONCE_SIZE];
         rand::thread_rng().fill_bytes(&mut nonce_bytes);
@@ -184,7 +185,7 @@ impl SecurityManager {
         Ok(())
     }
 
-    /// Membaca dan memverifikasi token lisensi lokal (cek signature, HWID, dan masa berlaku)
+    /// Membaca dan memverifikasi token lisensi lokal (cek signature dan masa berlaku, tanpa penguncian HWID)
     pub fn read_and_verify_local_token(base_dir: &Path, current_hwid: &str) -> Result<LocalLicenseToken> {
         let token_path = base_dir.join(LOCAL_TOKEN_FILENAME);
         if !token_path.exists() {
@@ -197,27 +198,29 @@ impl SecurityManager {
         }
 
         let (nonce_bytes, ciphertext) = payload.split_at(NONCE_SIZE);
-        let key = Self::derive_key(current_hwid, SECRET_SALT);
-        let cipher = Aes256Gcm::new((&key).into());
         let nonce = Nonce::from_slice(nonce_bytes);
 
-        let decrypted = cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|_| anyhow!("Dekripsi token lokal gagal (Hardware ID perangkat tidak cocok)"))?;
+        // Dekripsi menggunakan kunci portabel (mendukung portabilitas drive antar-perangkat)
+        // Fallback ke kunci legacy berbasis HWID jika token lama
+        let decrypted = {
+            let portable_key = Self::derive_key(PORTABLE_TOKEN_KEY, SECRET_SALT);
+            let cipher = Aes256Gcm::new((&portable_key).into());
+            match cipher.decrypt(nonce, ciphertext) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    let legacy_key = Self::derive_key(current_hwid, SECRET_SALT);
+                    let legacy_cipher = Aes256Gcm::new((&legacy_key).into());
+                    legacy_cipher
+                        .decrypt(nonce, ciphertext)
+                        .map_err(|_| anyhow!("Dekripsi token lokal gagal (format token tidak valid atau korup)"))?
+                }
+            }
+        };
 
         let token: LocalLicenseToken = serde_json::from_slice(&decrypted)
             .context("Format data lisensi lokal rusak atau tidak valid")?;
 
-        // 1. Verifikasi kecocokan Hardware ID
-        if token.hwid != current_hwid {
-            return Err(anyhow!(
-                "Hardware Mismatch: HWID token ({}) berbeda dengan perangkat lokal ({})",
-                token.hwid,
-                current_hwid
-            ));
-        }
-
-        // 2. Verifikasi Tanda Tangan (Integrity Check)
+        // 1. Verifikasi Tanda Tangan (Integrity Check)
         let expected_signature = Self::calculate_signature(&token.serial_key, &token.hwid, &token.vault_secret);
         if token.signature != expected_signature {
             return Err(anyhow!("Tanda tangan (signature) token lisensi lokal tidak valid (data telah dimodifikasi)"));
@@ -302,7 +305,7 @@ impl SecurityManager {
             println!("[AKSAVENTRA] Berkas Lisensi Lokal Ditemukan ({})", LOCAL_TOKEN_FILENAME);
             match Self::read_and_verify_local_token(base_dir, &hwid) {
                 Ok(cached_token) => {
-                    println!("[AKSAVENTRA] Verifikasi Signature & HWID Lokal: Valid (Offline/Cached Mode).");
+                    println!("[AKSAVENTRA] Verifikasi Signature Lisensi Lokal: Valid (Offline/Cached Mode, Portabel).");
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_secs())
@@ -451,10 +454,10 @@ impl SecurityManager {
                 .map(|r| r.message)
                 .filter(|m| !m.is_empty());
             return Err(anyhow!(
-                "[AKSAVENTRA ERROR] Validasi Gagal (HTTP 403: Hardware Mismatch).\n\
+                "[AKSAVENTRA ERROR] Validasi Gagal (HTTP 403: Akses Ditolak).\n\
                  {}\n\
-                 Silakan hubungi administrator di https://aksaventra.ai.id untuk mereset perangkat terdaftar.",
-                server_msg.unwrap_or_else(|| "Serial Key ini telah terkunci pada perangkat keras (HWID) lain.".to_string())
+                 Silakan hubungi administrator di https://aksaventra.ai.id untuk memeriksa status lisensi Anda.",
+                server_msg.unwrap_or_else(|| "Lisensi ditolak atau dinonaktifkan oleh administrator.".to_string())
             ));
         }
 
@@ -814,9 +817,20 @@ mod tests {
         assert_eq!(read_token.hwid, hwid_a);
         assert_eq!(read_token.vault_secret, secret);
 
-        // 3. Baca dengan HWID yang berbeda -> Harus gagal (Hardware Mismatch)
-        let mismatch_res = SecurityManager::read_and_verify_local_token(&temp_dir, hwid_b);
-        assert!(mismatch_res.is_err(), "HWID yang berbeda harus ditolak");
+        // 3. Baca dengan HWID perangkat lain -> Tetap SUKSES (penguncian HWID telah dihapus untuk portabilitas)
+        let read_token_b = SecurityManager::read_and_verify_local_token(&temp_dir, hwid_b)
+            .expect("Harus tetap sukses di perangkat lain karena penguncian HWID dinonaktifkan");
+        assert_eq!(read_token_b.serial_key, serial);
+        assert_eq!(read_token_b.vault_secret, secret);
+
+        // 4. Modifikasi berkas token lokal (tampering) -> Harus gagal
+        let token_path = temp_dir.join(LOCAL_TOKEN_FILENAME);
+        let mut tampered = fs::read(&token_path).unwrap();
+        let last_idx = tampered.len() - 1;
+        tampered[last_idx] ^= 0xFF;
+        fs::write(&token_path, tampered).unwrap();
+        let tamper_res = SecurityManager::read_and_verify_local_token(&temp_dir, hwid_a);
+        assert!(tamper_res.is_err(), "Data yang dimanipulasi harus gagal diverifikasi");
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
