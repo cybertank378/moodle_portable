@@ -74,10 +74,12 @@ impl PortablePaths {
         let maria_data_dir = self.mariadb_dir.join("data");
         fs::create_dir_all(&maria_data_dir)?;
         let my_ini_path = maria_data_dir.join("my.ini");
+        let plugin_dir_posix = format!("{mariadb_posix}/lib/plugin");
         let my_ini_content = format!(
             "[mysqld]\n\
             basedir=\"{mariadb_posix}\"\n\
             datadir=\"{mariadb_posix}/data\"\n\
+            plugin_dir=\"{plugin_dir_posix}\"\n\
             port=3306\n\
             bind-address=127.0.0.1\n\
             character-set-server=utf8mb4\n\
@@ -96,12 +98,17 @@ impl PortablePaths {
         let php_ini_path = self.php_dir.join("php.ini");
         if php_ini_path.exists() {
             let php_ini = fs::read_to_string(&php_ini_path)?;
+            let temp_dir = self.moodledata_dir.join("temp");
+            let _ = fs::create_dir_all(&temp_dir);
+            let temp_posix = Self::to_posix_path(&temp_dir);
             let session_dir = self.moodledata_dir.join("sessions");
             fs::create_dir_all(&session_dir)?;
             let session_posix = Self::to_posix_path(&session_dir);
 
             let mut updated_lines = Vec::new();
             let mut extension_dir_set = false;
+            let mut sys_temp_dir_set = false;
+            let mut upload_tmp_dir_set = false;
             let mut session_save_path_set = false;
 
             for line in php_ini.lines() {
@@ -109,6 +116,12 @@ impl PortablePaths {
                 if trimmed.starts_with("extension_dir") || trimmed.starts_with(";extension_dir") {
                     updated_lines.push("extension_dir = \"ext\"".to_string());
                     extension_dir_set = true;
+                } else if trimmed.starts_with("sys_temp_dir") || trimmed.starts_with(";sys_temp_dir") {
+                    updated_lines.push(format!("sys_temp_dir = \"{}\"", temp_posix));
+                    sys_temp_dir_set = true;
+                } else if trimmed.starts_with("upload_tmp_dir") || trimmed.starts_with(";upload_tmp_dir") {
+                    updated_lines.push(format!("upload_tmp_dir = \"{}\"", temp_posix));
+                    upload_tmp_dir_set = true;
                 } else if trimmed.starts_with("session.save_path")
                     || trimmed.starts_with(";session.save_path")
                 {
@@ -121,6 +134,12 @@ impl PortablePaths {
 
             if !extension_dir_set {
                 updated_lines.push("extension_dir = \"ext\"".to_string());
+            }
+            if !sys_temp_dir_set {
+                updated_lines.push(format!("sys_temp_dir = \"{}\"", temp_posix));
+            }
+            if !upload_tmp_dir_set {
+                updated_lines.push(format!("upload_tmp_dir = \"{}\"", temp_posix));
             }
             if !session_save_path_set {
                 updated_lines.push(format!("session.save_path = \"{}\"", session_posix));
@@ -243,6 +262,14 @@ impl PortablePaths {
                 if trimmed.starts_with("$CFG->dataroot") {
                     // Gunakan ekspresi dinamis dirname(__DIR__) agar 100% portabel tanpa hardcoded path
                     updated_lines.push("$CFG->dataroot  = dirname(__DIR__) . '/moodledata';".to_string());
+                    updated_lines.push("$CFG->tempdir   = $CFG->dataroot . '/temp';".to_string());
+                    updated_lines.push("$CFG->cachedir  = $CFG->dataroot . '/cache';".to_string());
+                    updated_lines.push("$CFG->localcachedir = $CFG->dataroot . '/localcache';".to_string());
+                } else if trimmed.starts_with("$CFG->tempdir")
+                    || trimmed.starts_with("$CFG->cachedir")
+                    || trimmed.starts_with("$CFG->localcachedir")
+                {
+                    continue;
                 } else if trimmed.starts_with("$CFG->wwwroot") {
                     // Gunakan logika dinamis berbasis HTTP_HOST request atau fallback ke IP lokal aktif
                     let dynamic_wwwroot = format!(
@@ -259,6 +286,20 @@ impl PortablePaths {
 
         Ok(())
     }
+
+    /// Sinkronisasi seluruh konfigurasi runtime portabel (alias untuk patch_portable_configs)
+    #[allow(dead_code)]
+    pub fn sync_all_runtime_paths(&self, port: u16, profile: &crate::hardware::HardwareProfile) -> Result<()> {
+        self.patch_portable_configs(port, profile)
+    }
+}
+
+/// Sinkronisasi seluruh konfigurasi runtime portabel dari direktori runtime
+#[allow(dead_code)]
+pub fn sync_all_runtime_paths(rt_dir: &Path) -> Result<()> {
+    let paths = PortablePaths::from_base_dir(rt_dir.to_path_buf());
+    let default_profile = crate::hardware::custom_profile(16);
+    paths.patch_portable_configs(8080, &default_profile)
 }
 
 #[cfg(test)]
@@ -337,6 +378,8 @@ mod tests {
             PortablePaths::to_posix_path(&paths.moodledata_dir.join("sessions"));
         assert!(php_ini.contains("extension_dir = \"ext\""));
         assert!(php_ini.contains(&format!("session.save_path = \"{}\"", session_posix)));
+        assert!(php_ini.contains("sys_temp_dir = "));
+        assert!(php_ini.contains("upload_tmp_dir = "));
 
         // 3. Verifikasi Nginx nginx.conf & sites-enabled/moodle.conf
         let nginx_conf =
@@ -364,6 +407,7 @@ mod tests {
         let moodle_cfg = fs::read_to_string(paths.moodle_dir.join("config.php")).unwrap();
         assert!(moodle_cfg.contains("$CFG->wwwroot") && moodle_cfg.contains(":9090"));
         assert!(moodle_cfg.contains("$CFG->dataroot  = dirname(__DIR__) . '/moodledata';"));
+        assert!(moodle_cfg.contains("$CFG->tempdir   = $CFG->dataroot . '/temp';"));
 
         // 5. Verifikasi dynamic scaling dengan profil Custom (64 workers)
         let profile_custom = crate::hardware::custom_profile(64);
