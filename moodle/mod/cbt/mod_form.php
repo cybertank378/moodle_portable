@@ -63,14 +63,6 @@ class mod_cbt_mod_form extends moodleform_mod {
         $mform->setDefault('maxstrikes', 3);
         $mform->addHelpButton('maxstrikes', 'maxstrikes', 'mod_cbt');
 
-        $mform->addElement('selectyesno', 'sebrequired', get_string('sebrequired', 'mod_cbt'));
-        $mform->setDefault('sebrequired', 0);
-        $mform->addHelpButton('sebrequired', 'sebrequired', 'mod_cbt');
-
-        $mform->addElement('text', 'sebconfigkey', get_string('sebconfigkey', 'mod_cbt'), ['size' => '64']);
-        $mform->setType('sebconfigkey', PARAM_ALPHANUMEXT);
-        $mform->hideIf('sebconfigkey', 'sebrequired', 'eq', 0);
-
         $mform->addElement('text', 'active_token', get_string('active_token', 'mod_cbt'), ['size' => '10']);
         $mform->setType('active_token', PARAM_ALPHANUMEXT);
         $mform->addHelpButton('active_token', 'active_token', 'mod_cbt');
@@ -89,3 +81,4 @@ class mod_cbt_mod_form extends moodleform_mod {
         $this->add_action_buttons();
     }
 }
+

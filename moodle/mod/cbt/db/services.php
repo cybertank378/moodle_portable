@@ -76,3 +76,4 @@ $services = [
         'shortname' => 'mod_cbt_service',
     ],
 ];
+

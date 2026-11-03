@@ -42,7 +42,6 @@ class get_exam_manifest extends external_api {
             'cbtid' => new external_value(PARAM_INT, 'The ID of the CBT activity instance'),
             'token' => new external_value(PARAM_ALPHANUMEXT, 'Room token if required by exam', VALUE_DEFAULT, ''),
             'device_hash' => new external_value(PARAM_ALPHANUMEXT, 'Client device fingerprint hash', VALUE_DEFAULT, ''),
-            'seb_header' => new external_value(PARAM_RAW, 'Safe Exam Browser config key header value', VALUE_DEFAULT, ''),
         ]);
     }
 
@@ -52,17 +51,15 @@ class get_exam_manifest extends external_api {
      * @param int $cbtid
      * @param string $token
      * @param string $device_hash
-     * @param string $seb_header
      * @return array
      */
-    public static function execute(int $cbtid, string $token = '', string $device_hash = '', string $seb_header = ''): array {
+    public static function execute(int $cbtid, string $token = '', string $device_hash = ''): array {
         global $DB, $USER;
 
         $params = self::validate_parameters(self::execute_parameters(), [
             'cbtid' => $cbtid,
             'token' => $token,
             'device_hash' => $device_hash,
-            'seb_header' => $seb_header,
         ]);
 
         $cbt = $DB->get_record('cbt', ['id' => $params['cbtid']], '*', MUST_EXIST);
@@ -80,8 +77,7 @@ class get_exam_manifest extends external_api {
             (int)$USER->id,
             $params['token'],
             $params['device_hash'],
-            $ip,
-            $params['seb_header']
+            $ip
         );
     }
 
@@ -123,3 +119,4 @@ class get_exam_manifest extends external_api {
         ]);
     }
 }
+

@@ -54,3 +54,4 @@ foreach ($cbts as $cbt) {
 
 echo html_writer::table($table);
 echo $OUTPUT->footer();
+

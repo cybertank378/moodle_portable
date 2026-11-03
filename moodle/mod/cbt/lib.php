@@ -212,3 +212,4 @@ function cbt_page_type_list($pagetype, $parentcontext, $currentcontext) {
         'mod-cbt-view' => get_string('page-mod-cbt-view', 'mod_cbt'),
     ];
 }
+

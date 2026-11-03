@@ -48,3 +48,4 @@ class push_grades_task extends \core\task\adhoc_task {
         cbt_update_grades($cbt, (int)$data->userid);
     }
 }
+

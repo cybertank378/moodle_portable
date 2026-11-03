@@ -62,3 +62,4 @@ class attempt_locked extends \core\event\base {
         ]);
     }
 }
+

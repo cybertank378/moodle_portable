@@ -133,3 +133,4 @@ class domain_score_calculator_test extends \advanced_testcase {
         $this->assertFalse($invalid);
     }
 }
+

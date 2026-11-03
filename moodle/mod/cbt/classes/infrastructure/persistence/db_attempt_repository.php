@@ -210,3 +210,4 @@ class db_attempt_repository {
         return $DB->get_records('cbt_violation_logs', ['attemptid' => $attemptid], 'timecreated DESC');
     }
 }
+

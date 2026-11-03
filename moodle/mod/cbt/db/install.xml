@@ -15,8 +15,6 @@
         <FIELD NAME="timeclose" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Close timestamp"/>
         <FIELD NAME="timelimit" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Duration limit in seconds"/>
         <FIELD NAME="maxstrikes" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="3" SEQUENCE="false" COMMENT="Max tab blur / fullscreen violations before locking"/>
-        <FIELD NAME="sebrequired" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Safe Exam Browser required (0=No, 1=Yes)"/>
-        <FIELD NAME="sebconfigkey" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false" COMMENT="SHA-256 hash of SEB Config Key"/>
         <FIELD NAME="tokensecret" TYPE="char" LENGTH="64" NOTNULL="true" DEFAULT="" SEQUENCE="false" COMMENT="Secret key to rotate 6-digit room tokens"/>
         <FIELD NAME="active_token" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="" SEQUENCE="false" COMMENT="Current manual/active 6-digit token"/>
         <FIELD NAME="token_expiry" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Expiry timestamp of active token"/>
@@ -79,3 +77,4 @@
     </TABLE>
   </TABLES>
 </XMLDB>
+

@@ -61,3 +61,4 @@ class attempt_submitted extends \core\event\base {
         ]);
     }
 }
+

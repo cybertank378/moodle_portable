@@ -222,3 +222,4 @@ class muc_snapshot_store {
         ];
     }
 }
+

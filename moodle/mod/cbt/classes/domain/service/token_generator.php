@@ -107,3 +107,4 @@ class token_generator {
         return false;
     }
 }
+

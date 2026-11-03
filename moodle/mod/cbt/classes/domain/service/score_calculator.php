@@ -150,3 +150,4 @@ class score_calculator {
         }
     }
 }
+

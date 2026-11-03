@@ -103,3 +103,4 @@ class external_sync_batch_test extends \advanced_testcase {
         $this->assertTrue($attempt->is_time_expired(7200, $future));
     }
 }
+

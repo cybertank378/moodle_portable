@@ -45,7 +45,6 @@ class authenticate_attempt {
      * @param string $token
      * @param string $device_hash
      * @param string $ip_address
-     * @param string|null $seb_header
      * @return array Standard manifest payload
      * @throws \moodle_exception
      */
@@ -54,8 +53,7 @@ class authenticate_attempt {
         int $userid,
         string $token,
         string $device_hash,
-        string $ip_address = '',
-        ?string $seb_header = null
+        string $ip_address = ''
     ): array {
         $now = time();
 
@@ -67,14 +65,7 @@ class authenticate_attempt {
             throw new \moodle_exception('exam_closed', 'mod_cbt');
         }
 
-        // 2. Validate SEB requirement
-        if (!empty($cbt->sebrequired)) {
-            if (empty($seb_header) || !empty($cbt->sebconfigkey) && hash('sha256', (string)$seb_header) !== $cbt->sebconfigkey) {
-                throw new \moodle_exception('seb_required_error', 'mod_cbt');
-            }
-        }
-
-        // 3. Validate Room Token if configured
+        // 2. Validate Room Token if configured
         if (!empty($cbt->tokensecret) || !empty($cbt->active_token)) {
             $valid = token_generator::validate(
                 $token,
@@ -184,3 +175,4 @@ class authenticate_attempt {
         ];
     }
 }
+

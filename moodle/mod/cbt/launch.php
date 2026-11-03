@@ -64,3 +64,4 @@ $redirect_target = new moodle_url($nextjs_url, [
 ]);
 
 redirect($redirect_target);
+

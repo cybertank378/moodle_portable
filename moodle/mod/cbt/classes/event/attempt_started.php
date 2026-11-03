@@ -60,3 +60,4 @@ class attempt_started extends \core\event\base {
         ]);
     }
 }
+

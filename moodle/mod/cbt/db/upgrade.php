@@ -38,3 +38,4 @@ function xmldb_cbt_upgrade($oldversion) {
     // Initial version 2026110400 does not need upgrade steps.
     return true;
 }
+

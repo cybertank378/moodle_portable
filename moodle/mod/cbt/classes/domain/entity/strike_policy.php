@@ -89,3 +89,4 @@ class strike_policy {
         ];
     }
 }
+

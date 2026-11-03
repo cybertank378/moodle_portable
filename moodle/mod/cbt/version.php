@@ -30,3 +30,4 @@ $plugin->component = 'mod_cbt';        // Full name of the plugin.
 $plugin->maturity  = MATURITY_STABLE;
 $plugin->release   = 'v1.0.0';
 $plugin->cron      = 0;
+

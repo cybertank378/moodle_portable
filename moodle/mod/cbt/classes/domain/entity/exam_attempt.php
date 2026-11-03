@@ -216,3 +216,4 @@ class exam_attempt {
         $this->extra_time += max(0, $seconds);
     }
 }
+

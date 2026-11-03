@@ -96,3 +96,4 @@ if ($attempt_rec && $attempt_rec->status === 'submitted') {
 echo '</div>';
 
 echo $OUTPUT->footer();
+

@@ -13,8 +13,6 @@
 | `timeclose` | BIGINT(10) | No | 0 | Unix Timestamp ujian ditutup |
 | `timelimit` | BIGINT(10) | No | 0 | Durasi ujian dalam detik (misal: 7200 = 120 menit) |
 | `maxstrikes` | INT(4) | No | 3 | Batas maksimal pindah tab/kehilangan fokus sebelum terkunci |
-| `sebrequired` | TINYINT(1) | No | 0 | Wajib Safe Exam Browser (0=Tidak, 1=Ya) |
-| `sebconfigkey` | VARCHAR(64) | Yes | Null | SHA-256 Hash dari Config Key SEB |
 | `tokensecret` | VARCHAR(64) | No | '' | Secret key untuk merotasi token ruang 6-digit |
 | `active_token` | VARCHAR(10) | No | '' | Token 6-digit aktif saat ini (diperbarui proktor) |
 | `token_expiry` | BIGINT(10) | No | 0 | Masa berlaku token saat ini |
