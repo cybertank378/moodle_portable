@@ -28,6 +28,10 @@ Cargo.lock
 
 /moodle/*
 !/moodle/config.php
+!/moodle/mod/
+/moodle/mod/*
+!/moodle/mod/cbt/
+!/moodle/mod/cbt/**
 
 /moodledata/
 
