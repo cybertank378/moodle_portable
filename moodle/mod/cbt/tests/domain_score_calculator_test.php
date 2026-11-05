@@ -97,6 +97,172 @@ class domain_score_calculator_test extends \advanced_testcase {
         $this->assertEquals(0.0, $res3['sumgrades']);
     }
 
+    public function test_truefalse_grading() {
+        $keys = [
+            401 => ['type' => 'truefalse', 'weight' => 1.0, 'key' => 'true'],
+            402 => ['type' => 'truefalse', 'weight' => 1.0, 'key' => 'false'],
+        ];
+
+        // 1. Both correct
+        $sub1 = [
+            401 => ['ans' => 'true', 'flag' => false, 'ts' => 100],
+            402 => ['ans' => '0', 'flag' => false, 'ts' => 100], // '0' is normalized to false
+        ];
+        $res1 = score_calculator::calculate($keys, $sub1, 100.0);
+        $this->assertEquals(100.0, $res1['sumgrades']);
+
+        // 2. Boolean & text input: e.g. 'benar' / 'salah'
+        $sub2 = [
+            401 => ['ans' => 'benar', 'flag' => false, 'ts' => 100],
+            402 => ['ans' => 'salah', 'flag' => false, 'ts' => 100],
+        ];
+        $res2 = score_calculator::calculate($keys, $sub2, 100.0);
+        $this->assertEquals(100.0, $res2['sumgrades']);
+
+        // 3. One wrong
+        $sub3 = [
+            401 => ['ans' => 'false', 'flag' => false, 'ts' => 100],
+            402 => ['ans' => 'false', 'flag' => false, 'ts' => 100],
+        ];
+        $res3 = score_calculator::calculate($keys, $sub3, 100.0);
+        $this->assertEquals(50.0, $res3['sumgrades']);
+    }
+
+    public function test_numerical_grading_with_tolerance() {
+        $keys = [
+            501 => [
+                'type' => 'numerical',
+                'weight' => 2.0,
+                'key' => [
+                    'answer' => 9.8,
+                    'tolerance' => 0.2, // Accepted: 9.6 to 10.0
+                ],
+            ],
+        ];
+
+        // Exact
+        $res_exact = score_calculator::calculate($keys, [501 => ['ans' => 9.8]], 100.0);
+        $this->assertEquals(100.0, $res_exact['sumgrades']);
+
+        // Within tolerance (9.7)
+        $res_in = score_calculator::calculate($keys, [501 => ['ans' => '9.7']], 100.0);
+        $this->assertEquals(100.0, $res_in['sumgrades']);
+
+        // Boundary edge within tolerance (10.0)
+        $res_edge = score_calculator::calculate($keys, [501 => ['ans' => 10.0]], 100.0);
+        $this->assertEquals(100.0, $res_edge['sumgrades']);
+
+        // Outside tolerance (10.1)
+        $res_out = score_calculator::calculate($keys, [501 => ['ans' => 10.1]], 100.0);
+        $this->assertEquals(0.0, $res_out['sumgrades']);
+
+        // Non numeric
+        $res_invalid = score_calculator::calculate($keys, [501 => ['ans' => 'abc']], 100.0);
+        $this->assertEquals(0.0, $res_invalid['sumgrades']);
+    }
+
+    public function test_match_grading() {
+        $keys = [
+            601 => [
+                'type' => 'match',
+                'weight' => 3.0,
+                'key' => [
+                    1 => 'Tokyo',
+                    2 => 'Paris',
+                    3 => 'Canberra',
+                ],
+            ],
+        ];
+
+        // All matched
+        $sub_full = [
+            601 => [
+                'ans' => [
+                    1 => 'Tokyo',
+                    2 => 'Paris',
+                    3 => 'Canberra',
+                ],
+            ],
+        ];
+        $res_full = score_calculator::calculate($keys, $sub_full, 100.0);
+        $this->assertEquals(100.0, $res_full['sumgrades']);
+
+        // 2 of 3 matched -> 2/3 * 3.0 = 2.0 raw -> (2.0 / 3.0) * 100 = 66.66667
+        $sub_partial = [
+            601 => [
+                'ans' => [
+                    1 => 'Tokyo',
+                    2 => 'Paris',
+                    3 => 'Sydney', // Wrong
+                ],
+            ],
+        ];
+        $res_partial = score_calculator::calculate($keys, $sub_partial, 100.0);
+        $this->assertEquals(66.66667, $res_partial['sumgrades']);
+    }
+
+    public function test_gapselect_grading() {
+        $keys = [
+            701 => [
+                'type' => 'gapselect',
+                'weight' => 2.0,
+                'key' => [
+                    1 => 'mitokondria',
+                    2 => 'ATP',
+                ],
+            ],
+        ];
+
+        // Full match
+        $sub1 = [701 => ['ans' => [1 => 'mitokondria', 2 => 'ATP']]];
+        $res1 = score_calculator::calculate($keys, $sub1, 100.0);
+        $this->assertEquals(100.0, $res1['sumgrades']);
+
+        // Partial match
+        $sub2 = [701 => ['ans' => [1 => 'mitokondria', 2 => 'glukosa']]];
+        $res2 = score_calculator::calculate($keys, $sub2, 100.0);
+        $this->assertEquals(50.0, $res2['sumgrades']);
+    }
+
+    public function test_essay_grading_and_manual_flag() {
+        $keys = [
+            801 => ['type' => 'essay', 'weight' => 5.0, 'key' => ['requires_manual_grading' => true]],
+        ];
+
+        $sub = [
+            801 => ['ans' => 'Ini adalah jawaban esai yang panjang dan mendalam dari siswa.'],
+        ];
+        $res = score_calculator::calculate($keys, $sub, 100.0);
+
+        // Auto fraction should be 0.0 pending review, with requires_manual_grading flag set to true
+        $this->assertEquals(0.0, $res['sumgrades']);
+        $this->assertTrue($res['requires_manual_grading']);
+        $this->assertTrue($res['details'][801]['manual_grading']);
+    }
+
+    public function test_comprehensive_mixed_exam() {
+        $keys = [
+            1 => ['type' => 'multichoice_single', 'weight' => 1.0, 'key' => 'A'],
+            2 => ['type' => 'truefalse', 'weight' => 1.0, 'key' => 'true'],
+            3 => ['type' => 'shortanswer', 'weight' => 1.0, 'key' => ['Nusantara']],
+            4 => ['type' => 'numerical', 'weight' => 1.0, 'key' => ['answer' => 100, 'tolerance' => 1]],
+        ];
+
+        // All 4 correct
+        $sub = [
+            1 => ['ans' => 'A'],
+            2 => ['ans' => 'true'],
+            3 => ['ans' => 'Nusantara'],
+            4 => ['ans' => 99.5], // Within 100 +/- 1
+        ];
+
+        $res = score_calculator::calculate($keys, $sub, 100.0);
+        $this->assertEquals(100.0, $res['sumgrades']);
+        $this->assertEquals(4.0, $res['raw_score']);
+        $this->assertEquals(4.0, $res['max_raw_score']);
+        $this->assertFalse($res['requires_manual_grading']);
+    }
+
     public function test_strike_policy_evaluation() {
         // Tab blur adds 1 strike
         $eval1 = strike_policy::evaluate(strike_policy::EVENT_TAB_BLUR, 0, 3);

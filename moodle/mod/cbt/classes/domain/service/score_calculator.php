@@ -49,6 +49,7 @@ class score_calculator {
         $raw_score = 0.0;
         $max_raw_score = 0.0;
         $details = [];
+        $requires_manual_grading = false;
 
         foreach ($answer_keys_map as $qid => $qdata) {
             $type = $qdata['type'] ?? 'multichoice_single';
@@ -57,6 +58,10 @@ class score_calculator {
 
             $correct_key = $qdata['key'] ?? null;
             $user_submission = $submitted_answers[$qid]['ans'] ?? null;
+
+            if ($type === 'essay') {
+                $requires_manual_grading = true;
+            }
 
             $fraction = self::calculate_fraction($type, $correct_key, $user_submission);
             $item_score = $fraction * $weight;
@@ -67,6 +72,7 @@ class score_calculator {
                 'weight' => $weight,
                 'fraction' => $fraction,
                 'score' => $item_score,
+                'manual_grading' => ($type === 'essay'),
             ];
         }
 
@@ -78,6 +84,7 @@ class score_calculator {
             'raw_score' => round($raw_score, 5),
             'max_raw_score' => round($max_raw_score, 5),
             'percentage' => round($percentage * 100, 2),
+            'requires_manual_grading' => $requires_manual_grading,
             'details' => $details,
         ];
     }
@@ -144,6 +151,77 @@ class score_calculator {
                 $accepted = array_map('mb_strtolower', array_map('trim', (array)$correct_key));
                 $given = mb_strtolower(trim((string)$user_answer));
                 return in_array($given, $accepted, true) ? 1.0 : 0.0;
+
+            case 'truefalse':
+                // Normalized check: boolean, 'true'/'false', '1'/'0', 't'/'f'
+                $normalize_bool = static function ($val): ?bool {
+                    if (is_bool($val)) {
+                        return $val;
+                    }
+                    $s = strtolower(trim((string)$val));
+                    if (in_array($s, ['1', 'true', 't', 'benar', 'ya'], true)) {
+                        return true;
+                    }
+                    if (in_array($s, ['0', 'false', 'f', 'salah', 'tidak'], true)) {
+                        return false;
+                    }
+                    return null;
+                };
+
+                $expected_bool = $normalize_bool($correct_key);
+                $given_bool = $normalize_bool($user_answer);
+
+                if ($expected_bool !== null && $given_bool !== null) {
+                    return ($expected_bool === $given_bool) ? 1.0 : 0.0;
+                }
+                return 0.0;
+
+            case 'numerical':
+                // Correct key can be scalar or associative: ['answer' => 3.1415, 'tolerance' => 0.01]
+                if (!is_numeric($user_answer)) {
+                    return 0.0;
+                }
+
+                $user_val = (float)$user_answer;
+                $target_val = 0.0;
+                $tolerance = 0.00001;
+
+                if (is_array($correct_key)) {
+                    $target_val = (float)($correct_key['answer'] ?? $correct_key[0] ?? 0.0);
+                    $tolerance = (float)($correct_key['tolerance'] ?? 0.0);
+                } else if (is_numeric($correct_key)) {
+                    $target_val = (float)$correct_key;
+                    $tolerance = 0.00001;
+                } else {
+                    return 0.0;
+                }
+
+                return (abs($user_val - $target_val) <= abs($tolerance)) ? 1.0 : 0.0;
+
+            case 'gapselect':
+            case 'ddwtos':
+            case 'cloze':
+                // Gap select: correct_key = [ 1 => 'answerA', 2 => 'answerB' ]
+                if (!is_array($correct_key) || !is_array($user_answer) || empty($correct_key)) {
+                    return 0.0;
+                }
+
+                $matched_gaps = 0;
+                $total_gaps = count($correct_key);
+                foreach ($correct_key as $gap_id => $expected_choice) {
+                    if (isset($user_answer[$gap_id])) {
+                        $user_choice = trim((string)$user_answer[$gap_id]);
+                        if (strcasecmp($user_choice, trim((string)$expected_choice)) === 0) {
+                            $matched_gaps++;
+                        }
+                    }
+                }
+                return $total_gaps > 0 ? (float)($matched_gaps / $total_gaps) : 0.0;
+
+            case 'essay':
+                // Essay answers are submitted as text/HTML and require manual teacher evaluation.
+                // Auto-score defaults to 0.0 awaiting manual grading in Moodle Gradebook.
+                return 0.0;
 
             default:
                 return 0.0;
