@@ -24,10 +24,10 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$string['modulename'] = 'CBT Examination';
-$string['modulenameplural'] = 'CBT Examinations';
-$string['pluginname'] = 'CBT Examination';
-$string['pluginadministration'] = 'CBT Examination administration';
+$string['modulename'] = 'Aksaventra CBT Examination';
+$string['modulenameplural'] = 'Aksaventra CBT Examinations';
+$string['pluginname'] = 'Aksaventra CBT Examination';
+$string['pluginadministration'] = 'Aksaventra CBT Examination administration';
 
 $string['cbtname'] = 'Exam Name';
 $string['intro'] = 'Instructions';
@@ -47,7 +47,7 @@ $string['grade'] = 'Maximum Grade';
 
 $string['status'] = 'Attempt Status';
 $string['status_inprogress'] = 'In Progress';
-$string['status_locked'] = 'Locked by Anti-Cheat';
+$string['status_locked'] = 'Locked by Aksaventra Anti-Cheat';
 $string['status_submitted'] = 'Submitted';
 $string['status_abandoned'] = 'Abandoned';
 
