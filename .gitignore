@@ -40,6 +40,9 @@ Cargo.lock
 /mariadb/data/*
 !/mariadb/data/my.ini
 
+/nodejs/*
+/dashboard/
+
 # Cleanup scripts
 cleanup_repo.ps1
 cleanup_repo.sh

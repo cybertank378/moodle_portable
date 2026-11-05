@@ -10,11 +10,13 @@ use std::time::Duration;
 pub const CREATE_NO_WINDOW: u32 = 0x08000000;
 pub const DB_PORT: u16 = 3306;
 pub const PHP_PORT: u16 = 9000;
+pub const NEXTJS_PORT: u16 = 3000;
 
 pub struct ServiceOrchestrator {
     mariadb_proc: Option<Child>,
     php_proc: Option<Child>,
     nginx_proc: Option<Child>,
+    nextjs_proc: Option<Child>,
 }
 
 impl ServiceOrchestrator {
@@ -23,17 +25,20 @@ impl ServiceOrchestrator {
             mariadb_proc: None,
             php_proc: None,
             nginx_proc: None,
+            nextjs_proc: None,
         }
     }
 
     /// Helper untuk membuat environment PATH terisolasi khusus direktori portabel
     pub fn portable_path_env(paths: &PortablePaths) -> String {
+        let node_dir = &paths.nodejs_dir;
         let php_dir = &paths.php_dir;
         let maria_bin = paths.mariadb_dir.join("bin");
         let nginx_dir = &paths.nginx_dir;
         let sys_path = std::env::var("PATH").unwrap_or_default();
         format!(
-            "{};{};{};{}",
+            "{};{};{};{};{}",
+            node_dir.display(),
             php_dir.display(),
             maria_bin.display(),
             nginx_dir.display(),
@@ -221,6 +226,64 @@ impl ServiceOrchestrator {
         }
         println!("  [OK] Nginx Web Server aktif.");
 
+        // 4. Jalankan Next.js CBT Server (Port 3000) menggunakan Node.js portabel
+        let _ = self.start_nextjs(paths);
+
+        Ok(())
+    }
+
+    /// Menjalankan server Next.js portabel pada port 3000
+    pub fn start_nextjs(&mut self, paths: &PortablePaths) -> Result<()> {
+        let node_bin = paths.nodejs_dir.join("node.exe");
+        if !node_bin.exists() {
+            println!("  [INFO] Runtime Node.js portabel tidak ditemukan di {:?}, melewati Next.js.", paths.nodejs_dir);
+            return Ok(());
+        }
+
+        let dashboard_dir = &paths.dashboard_dir;
+        if !dashboard_dir.exists() {
+            println!("  [INFO] Direktori Next.js/Dashboard tidak ditemukan di {:?}, melewati Next.js.", dashboard_dir);
+            return Ok(());
+        }
+
+        println!("[ENGINE] Menyalakan Next.js CBT Server (Port {})...", NEXTJS_PORT);
+
+        let next_cli = dashboard_dir.join("node_modules").join("next").join("dist").join("bin").join("next");
+        let server_js = dashboard_dir.join("server.js");
+
+        let mut cmd = Command::new(&node_bin);
+        cmd.current_dir(dashboard_dir)
+            .env("PORT", NEXTJS_PORT.to_string())
+            .env("PATH", Self::portable_path_env(paths))
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+
+        if server_js.exists() {
+            cmd.env("NODE_ENV", "production");
+            cmd.arg("server.js");
+        } else if next_cli.exists() {
+            let has_build = dashboard_dir.join(".next").exists();
+            if has_build {
+                cmd.env("NODE_ENV", "production");
+                cmd.arg(&next_cli).args(["start", "-p", &NEXTJS_PORT.to_string()]);
+            } else {
+                cmd.env("NODE_ENV", "development");
+                cmd.arg(&next_cli).args(["dev", "-p", &NEXTJS_PORT.to_string()]);
+            }
+        } else {
+            println!("  [WARN] Modul Next.js CLI tidak ditemukan di {:?}.", dashboard_dir);
+            return Ok(());
+        }
+
+        self.nextjs_proc = Some(cmd.spawn().with_context(|| "Gagal mengeksekusi Next.js server")?);
+
+        if wait_for_port(NEXTJS_PORT, Duration::from_secs(10)) {
+            println!("  [OK] Next.js CBT Server aktif di port {}.", NEXTJS_PORT);
+        } else {
+            println!("  [INFO] Next.js CBT Server telah dijalankan di background (port {}).", NEXTJS_PORT);
+        }
+
         Ok(())
     }
 
@@ -251,6 +314,13 @@ impl ServiceOrchestrator {
             let _ = child.wait();
         }
         println!("  [OK] PHP FastCGI Daemon dihentikan.");
+
+        // Hentikan Next.js CBT Server
+        if let Some(mut child) = self.nextjs_proc.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        println!("  [OK] Next.js CBT Server dihentikan.");
 
         // 3. Hentikan MariaDB secara bersih via mysqladmin shutdown agar tabel tidak korup
         let mysqladmin_bin = paths.mariadb_dir.join("bin").join("mysqladmin.exe");

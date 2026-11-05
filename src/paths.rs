@@ -13,6 +13,8 @@ pub struct PortablePaths {
     pub mariadb_dir: PathBuf,
     pub moodle_dir: PathBuf,
     pub moodledata_dir: PathBuf,
+    pub nodejs_dir: PathBuf,
+    pub dashboard_dir: PathBuf,
 }
 
 impl PortablePaths {
@@ -48,7 +50,27 @@ impl PortablePaths {
             base_dir.join(".aksaventra_rt")
         };
 
+        let nodejs_dir = if runtime_dir.join("nodejs").exists() {
+            runtime_dir.join("nodejs")
+        } else if base_dir.join("nodejs").exists() {
+            base_dir.join("nodejs")
+        } else {
+            runtime_dir.join("nodejs")
+        };
+
+        let dashboard_dir = if runtime_dir.join("dashboard").exists() {
+            runtime_dir.join("dashboard")
+        } else if base_dir.join("dashboard").exists() {
+            base_dir.join("dashboard")
+        } else if Path::new(r"D:\Project\Website\aksaventra-cbt").exists() {
+            PathBuf::from(r"D:\Project\Website\aksaventra-cbt")
+        } else {
+            runtime_dir.join("dashboard")
+        };
+
         Self {
+            nodejs_dir,
+            dashboard_dir,
             nginx_dir: runtime_dir.join("nginx"),
             php_dir: runtime_dir.join("php"),
             mariadb_dir: runtime_dir.join("mariadb"),
