@@ -45,6 +45,8 @@
         <FIELD NAME="question_order" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="JSON array of randomized question IDs"/>
         <FIELD NAME="answers_json" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Compressed JSON map of answers"/>
         <FIELD NAME="sync_version" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Optimistic locking version"/>
+        <FIELD NAME="room_code" TYPE="char" LENGTH="50" NOTNULL="false" SEQUENCE="false" COMMENT="Exam room code"/>
+        <FIELD NAME="seat_number" TYPE="char" LENGTH="20" NOTNULL="false" SEQUENCE="false" COMMENT="Assigned desk/seat number"/>
         <FIELD NAME="sumgrades" TYPE="number" LENGTH="10" DECIMALS="5" NOTNULL="false" SEQUENCE="false" COMMENT="Final calculated score"/>
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
@@ -73,6 +75,25 @@
       </KEYS>
       <INDEXES>
         <INDEX NAME="attempt_event" UNIQUE="false" FIELDS="attemptid, event_type"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="cbt_roster" COMMENT="Participant roster with assigned room and seat numbers">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="cbtid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Foreign key to cbt.id"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Foreign key to user.id"/>
+        <FIELD NAME="room_code" TYPE="char" LENGTH="50" NOTNULL="true" DEFAULT="" SEQUENCE="false" COMMENT="Exam room code, e.g. LAB-01"/>
+        <FIELD NAME="seat_number" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="" SEQUENCE="false" COMMENT="Assigned desk/seat number, e.g. M-12"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="cbtid" TYPE="foreign" FIELDS="cbtid" REFTABLE="cbt" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="cbtid_userid" UNIQUE="true" FIELDS="cbtid, userid"/>
+        <INDEX NAME="cbtid_room" UNIQUE="false" FIELDS="cbtid, room_code"/>
       </INDEXES>
     </TABLE>
   </TABLES>
