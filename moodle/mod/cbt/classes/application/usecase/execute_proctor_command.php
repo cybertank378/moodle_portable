@@ -55,11 +55,20 @@ class execute_proctor_command {
         $message = '';
 
         switch ($action) {
+            case 'lock':
+                $reason = (string)($payload['reason'] ?? 'Manual block by proctor (cheating detected)');
+                $this->repository->update_strikes($attempt->id, 99, exam_attempt::STATUS_LOCKED);
+                $this->repository->log_violation($attempt->id, 'PROCTOR_MANUAL_LOCK', ['reason' => $reason]);
+                $attempt->status = exam_attempt::STATUS_LOCKED;
+                $attempt->strike_count = 99;
+                $message = 'Attempt locked manually by proctor: ' . $reason;
+                break;
+
             case 'unlock':
                 $this->repository->update_strikes($attempt->id, 0, exam_attempt::STATUS_INPROGRESS);
                 $this->repository->log_violation($attempt->id, strike_policy::EVENT_PROCTOR_UNLOCK, $payload);
                 $attempt->unlock();
-                $message = 'Attempt unlocked successfully.';
+                $message = 'Attempt unlocked successfully (restored from lock/false alarm).';
                 break;
 
             case 'extend_time':

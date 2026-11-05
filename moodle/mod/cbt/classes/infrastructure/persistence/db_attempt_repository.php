@@ -193,5 +193,65 @@ class db_attempt_repository {
         global $DB;
         return $DB->get_records('cbt_violation_logs', ['attemptid' => $attemptid], 'timecreated DESC');
     }
+
+    /**
+     * Get all attempts for a given CBT instance.
+     *
+     * @param int $cbtid
+     * @return array
+     */
+    public function get_exam_attempts(int $cbtid): array {
+        global $DB;
+        return $DB->get_records('cbt_attempts', ['cbtid' => $cbtid], 'id ASC');
+    }
+
+    /**
+     * Get roster participants with seat and room allocation.
+     *
+     * @param int $cbtid
+     * @return array
+     */
+    public function get_roster_participants(int $cbtid): array {
+        global $DB;
+        $sql = "SELECT r.id, r.cbtid, r.userid, r.room_code, r.seat_number,
+                       u.username, u.firstname, u.lastname, u.email
+                  FROM {cbt_roster} r
+                  JOIN {user} u ON u.id = r.userid
+                 WHERE r.cbtid = :cbtid
+              ORDER BY r.room_code ASC, r.seat_number ASC";
+        return $DB->get_records_sql($sql, ['cbtid' => $cbtid]);
+    }
+
+    /**
+     * Assign or update a participant's room and seat.
+     *
+     * @param int $cbtid
+     * @param int $userid
+     * @param string $room_code
+     * @param string $seat_number
+     * @return int
+     */
+    public function assign_roster_participant(int $cbtid, int $userid, string $room_code, string $seat_number): int {
+        global $DB;
+        $existing = $DB->get_record('cbt_roster', ['cbtid' => $cbtid, 'userid' => $userid]);
+        $now = time();
+
+        if ($existing) {
+            $existing->room_code = $room_code;
+            $existing->seat_number = $seat_number;
+            $existing->timemodified = $now;
+            $DB->update_record('cbt_roster', $existing);
+            return (int)$existing->id;
+        }
+
+        $record = new \stdClass();
+        $record->cbtid = $cbtid;
+        $record->userid = $userid;
+        $record->room_code = $room_code;
+        $record->seat_number = $seat_number;
+        $record->timecreated = $now;
+        $record->timemodified = $now;
+        return (int)$DB->insert_record('cbt_roster', $record);
+    }
 }
 
