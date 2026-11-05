@@ -12,7 +12,7 @@ Kode di dalam `mod/cbt/classes/` dipisahkan menjadi tiga lapisan tegas:
 2. **Application Layer (`classes/application/`):**
    - `usecase/start_exam_usecase.php`: Memvalidasi token ruang, mengikat *Device Fingerprint*, dan menghasilkan *signed JWT/Session Token*.
    - `usecase/sync_answers_usecase.php`: Menangani antrean jawaban (*batch payload*) dari IndexedDB Next.js secara *atomic*.
-   - `usecase/proctor_action_usecase.php`: Eksekusi perintah pengawas (*Force Submit*, *Reset Device Lock*, *Add Time Extension*, *Unlock Strike*).
+   - `usecase/proctor_action_usecase.php`: Eksekusi perintah pengawas (*Force Submit*, *Add Time Extension*, *Unlock Strike*).
 3. **Infrastructure Layer (`classes/infrastructure/` & `classes/external/`):**
    - `repository/moodle_cbt_repository.php`: Implementasi query menggunakan `$DB` Moodle dengan optimasi *index* dan transaksi terisolasi.
    - `cache/exam_snapshot_cache.php`: Mengambil dan menyimpan struktur soal yang telah di-serialize ke Moodle Universal Cache (MUC) / File Cache agar 1.000 siswa yang membuka soal bersamaan melakukan **0 Query ke tabel Bank Soal**.

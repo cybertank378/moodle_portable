@@ -40,7 +40,7 @@ class execute_proctor_command {
      * Execute proctor command on an attempt.
      *
      * @param int $attemptid
-     * @param string $action Command: 'unlock', 'extend_time', 'reset_device', 'force_submit'
+     * @param string $action Command: 'unlock', 'extend_time', 'force_submit'
      * @param array $payload Additional parameters, e.g. [ 'seconds' => 600, 'reason' => '...' ]
      * @return array [ 'success' => bool, 'message' => string, 'attempt' => array ]
      * @throws \moodle_exception
@@ -68,13 +68,6 @@ class execute_proctor_command {
                 $this->repository->log_violation($attempt->id, strike_policy::EVENT_TIME_EXTEND, $payload);
                 $attempt->add_extra_time($seconds);
                 $message = "Added {$seconds} seconds extra time.";
-                break;
-
-            case 'reset_device':
-                $this->repository->reset_device_binding($attempt->id);
-                $this->repository->log_violation($attempt->id, strike_policy::EVENT_RESET_DEVICE, $payload);
-                $attempt->device_hash = '';
-                $message = 'Device lock unbound. Student can resume on another computer.';
                 break;
 
             case 'force_submit':

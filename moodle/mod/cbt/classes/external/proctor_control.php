@@ -39,7 +39,7 @@ class proctor_control extends external_api {
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'attemptid' => new external_value(PARAM_INT, 'The ID of the attempt'),
-            'action' => new external_value(PARAM_ALPHANUMEXT, 'Action command: unlock, extend_time, reset_device, force_submit'),
+            'action' => new external_value(PARAM_ALPHANUMEXT, 'Action command: unlock, extend_time, force_submit'),
             'payload' => new external_value(PARAM_RAW, 'Optional JSON payload (e.g. {"seconds": 600, "reason": "Power outage"})', VALUE_DEFAULT, ''),
         ]);
     }

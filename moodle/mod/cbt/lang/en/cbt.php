@@ -59,10 +59,8 @@ $string['exam_not_started'] = 'This exam has not started yet.';
 $string['exam_submitted'] = 'Your exam has already been submitted.';
 $string['exam_locked'] = 'Your exam attempt has been locked due to cheating violations. Please contact the exam proctor.';
 $string['invalid_token'] = 'Invalid or expired room token.';
-$string['device_mismatch'] = 'Device mismatch. Your session is bound to another device or browser.';
 $string['proctor_dashboard'] = 'Proctor Dashboard';
 $string['unlock_attempt'] = 'Unlock Attempt';
 $string['extend_time'] = 'Add Extra Time';
 $string['force_submit'] = 'Force Submit';
-$string['reset_device'] = 'Reset Device Lock';
 

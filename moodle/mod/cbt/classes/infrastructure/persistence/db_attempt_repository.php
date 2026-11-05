@@ -165,22 +165,6 @@ class db_attempt_repository {
     }
 
     /**
-     * Reset device hash to allow resume on another machine.
-     *
-     * @param int $attemptid
-     * @return bool
-     */
-    public function reset_device_binding(int $attemptid): bool {
-        global $DB;
-        $update = new \stdClass();
-        $update->id = $attemptid;
-        $update->device_hash = '';
-        $update->timemodified = time();
-
-        return $DB->update_record('cbt_attempts', $update);
-    }
-
-    /**
      * Insert violation or proctor action log.
      *
      * @param int $attemptid

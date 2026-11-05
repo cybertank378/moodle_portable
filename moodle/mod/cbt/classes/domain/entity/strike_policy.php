@@ -31,7 +31,6 @@ class strike_policy {
     public const EVENT_DEVTOOLS_OPEN = 'DEVTOOLS_OPEN';
     public const EVENT_PROCTOR_UNLOCK = 'PROCTOR_UNLOCK';
     public const EVENT_TIME_EXTEND = 'TIME_EXTEND';
-    public const EVENT_RESET_DEVICE = 'RESET_DEVICE';
     public const EVENT_FORCE_SUBMIT = 'FORCE_SUBMIT';
 
     /**

@@ -87,20 +87,24 @@ class authenticate_attempt {
                 throw new \moodle_exception('exam_submitted', 'mod_cbt');
             }
 
-            // Check device lock
-            if ($attempt->device_hash !== '' && $device_hash !== '' && $attempt->device_hash !== $device_hash) {
-                throw new \moodle_exception('device_mismatch', 'mod_cbt');
-            }
-
             if ($attempt->is_locked()) {
                 throw new \moodle_exception('exam_locked', 'mod_cbt');
             }
 
-            // Bind device if not bound
-            if ($attempt->device_hash === '' && $device_hash !== '') {
+            // Pelacakan perangkat dinamis (portabel): perbarui device_hash dan ip_address jika berganti mesin
+            global $DB;
+            $updates = [];
+            if ($device_hash !== '' && $attempt->device_hash !== $device_hash) {
                 $attempt->device_hash = $device_hash;
-                global $DB;
-                $DB->set_field('cbt_attempts', 'device_hash', $device_hash, ['id' => $attempt->id]);
+                $updates['device_hash'] = $device_hash;
+            }
+            if ($ip_address !== '' && $attempt->ip_address !== $ip_address) {
+                $attempt->ip_address = $ip_address;
+                $updates['ip_address'] = $ip_address;
+            }
+            if (!empty($updates)) {
+                $updates['timemodified'] = time();
+                $DB->update_record('cbt_attempts', (object)(array_merge(['id' => $attempt->id], $updates)));
             }
         } else {
             // Build question order
