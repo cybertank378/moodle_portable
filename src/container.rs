@@ -11,7 +11,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use tar::Archive;
 
-pub const PROTECTED_DIRS: [&str; 5] = ["nginx", "php", "moodle", "moodledata", "mariadb"];
+pub const PROTECTED_DIRS: [&str; 7] = ["nginx", "php", "moodle", "moodledata", "mariadb", "nodejs", "dashboard"];
 pub const NONCE_SIZE: usize = 12;
 
 pub struct VaultContainer;

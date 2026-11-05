@@ -28,6 +28,10 @@ Cargo.lock
 
 /moodle/*
 !/moodle/config.php
+!/moodle/mod/
+/moodle/mod/*
+!/moodle/mod/cbt/
+!/moodle/mod/cbt/**
 
 /moodledata/
 
@@ -35,6 +39,9 @@ Cargo.lock
 !/mariadb/data/
 /mariadb/data/*
 !/mariadb/data/my.ini
+
+/nodejs/*
+/dashboard/
 
 # Cleanup scripts
 cleanup_repo.ps1
