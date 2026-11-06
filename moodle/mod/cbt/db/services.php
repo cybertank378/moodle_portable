@@ -88,6 +88,20 @@ $functions = [
         'type'          => 'read',
         'capabilities'  => 'mod/cbt:grade',
     ],
+    'mod_cbt_manage_groups' => [
+        'classname'     => 'mod_cbt\\external\\manage_groups',
+        'methodname'    => 'execute',
+        'description'   => 'Create and manage student accounts and classrooms/cohorts.',
+        'type'          => 'write',
+        'capabilities'  => 'mod/cbt:manage',
+    ],
+    'mod_cbt_assign_group_to_exam' => [
+        'classname'     => 'mod_cbt\\external\\assign_group_to_exam',
+        'methodname'    => 'execute',
+        'description'   => 'Assign student groups/classes to an exam with auto seat numbers.',
+        'type'          => 'write',
+        'capabilities'  => 'mod/cbt:manage',
+    ],
 ];
 
 $services = [
@@ -102,6 +116,8 @@ $services = [
             'mod_cbt_manage_roster',
             'mod_cbt_get_proctor_stream',
             'mod_cbt_get_recapitulation',
+            'mod_cbt_manage_groups',
+            'mod_cbt_assign_group_to_exam',
         ],
         'restrictedusers' => 0,
         'enabled' => 1,

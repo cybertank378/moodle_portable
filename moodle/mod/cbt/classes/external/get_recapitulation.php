@@ -116,3 +116,4 @@ class get_recapitulation extends external_api {
         ]);
     }
 }
+

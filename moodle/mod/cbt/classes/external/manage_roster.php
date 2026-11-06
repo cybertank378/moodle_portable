@@ -90,3 +90,4 @@ class manage_roster extends external_api {
         ]);
     }
 }
+
