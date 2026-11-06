@@ -95,3 +95,4 @@ class assign_group_to_exam extends external_api {
         ]);
     }
 }
+

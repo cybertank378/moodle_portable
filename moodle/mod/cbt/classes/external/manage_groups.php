@@ -118,3 +118,4 @@ class manage_groups extends external_api {
         ]);
     }
 }
+

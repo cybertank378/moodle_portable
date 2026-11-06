@@ -227,3 +227,4 @@ class manage_classes_and_users {
         return $list;
     }
 }
+

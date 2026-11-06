@@ -1,0 +1,6 @@
+﻿nomor_meja;ruang;nis;nama_lengkap;kelas;status;waktu_mulai;waktu_selesai;durasi_menit;pelanggaran_strike;nilai_akhir;nilai_maksimal;status_kelulusan
+A-01;Lab Komputer 1;1001;Ahmad Dahlan;X-RPL-1;submitted;2026-11-06 08:00:00;2026-11-06 08:45:12;45.2;0;88.50;100;LULUS
+A-02;Lab Komputer 1;1002;Budi Santoso;X-RPL-1;submitted;2026-11-06 08:00:15;2026-11-06 08:52:30;52.25;1;76.00;100;LULUS
+A-03;Lab Komputer 1;1003;Citra Lestari;X-RPL-1;submitted;2026-11-06 08:00:05;2026-11-06 08:40:10;40.1;0;94.00;100;LULUS
+B-01;Lab Komputer 2;1004;Dewi Sartika;X-TKJ-1;submitted;2026-11-06 08:01:00;2026-11-06 08:48:22;47.37;0;82.50;100;LULUS
+B-02;Lab Komputer 2;1005;Eko Prasetyo;X-TKJ-1;submitted;2026-11-06 08:00:40;2026-11-06 08:55:00;54.33;2;68.00;100;REMIDI

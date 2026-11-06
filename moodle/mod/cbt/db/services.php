@@ -102,6 +102,13 @@ $functions = [
         'type'          => 'write',
         'capabilities'  => 'mod/cbt:manage',
     ],
+    'mod_cbt_import_export' => [
+        'classname'     => 'mod_cbt\\external\\import_export',
+        'methodname'    => 'execute',
+        'description'   => 'Import/Export students, questions (8 types), and exam results with Excel/CSV support.',
+        'type'          => 'write',
+        'capabilities'  => 'mod/cbt:manage',
+    ],
 ];
 
 $services = [
@@ -118,6 +125,7 @@ $services = [
             'mod_cbt_get_recapitulation',
             'mod_cbt_manage_groups',
             'mod_cbt_assign_group_to_exam',
+            'mod_cbt_import_export',
         ],
         'restrictedusers' => 0,
         'enabled' => 1,

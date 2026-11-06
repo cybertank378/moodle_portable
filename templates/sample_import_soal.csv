@@ -1,0 +1,9 @@
+﻿nomor;jenis_soal;teks_soal;bobot;opsi_a;opsi_b;opsi_c;opsi_d;opsi_e;kunci_jawaban;toleransi_error
+1;multichoice_single;Ibukota negara Indonesia yang baru diresmikan adalah...;1.00;Jakarta;Surabaya;Nusantara;Bandung;Medan;C;0
+2;multichoice_multi;Manakah dari bahasa pemrograman berikut yang berjalan di sisi backend/server? (Pilih semua yang benar);2.00;PHP;HTML;Node.js;CSS;Python;A,C,E;0
+3;truefalse;Protokol HTTPS menggunakan enkripsi SSL/TLS untuk mengamankan pertukaran data.;1.00;Benar;Salah;;;;TRUE;0
+4;shortanswer;Sebutkan nama sistem operasi open-source berlogo pinguin!;1.00;;;;;;Linux;0
+5;numerical;Berapakah hasil perhitungan dari 25 x 4 + 15?;1.00;;;;;;115;0.01
+6;match;Pasangkan negara berikut dengan ibukotanya masing-masing!;2.00;1:Jepang;2:Perancis;3:Inggris;4:Italia;;1:Tokyo;2:Paris;3:London;4:Roma;0
+7;gapselect;HTML adalah singkatan dari [[1]] Markup [[2]].;1.00;Hypertext;Language;Programming;Cascading;Style;1:Hypertext;2:Language;0
+8;essay;Jelaskan perbedaan mendasar antara Local Area Network (LAN) dan Wide Area Network (WAN)!;5.00;;;;;;requires_manual_grading;0
