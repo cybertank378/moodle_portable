@@ -64,3 +64,14 @@ $string['unlock_attempt'] = 'Unlock Attempt';
 $string['extend_time'] = 'Add Extra Time';
 $string['force_submit'] = 'Force Submit';
 
+// Admin settings strings
+$string['settings_nextjs_url'] = 'Next.js Frontend Exam URL';
+$string['settings_nextjs_url_desc'] = 'URL endpoint aplikasi frontend Next.js 16 tempat siswa mengerjakan ujian (default: http://localhost:3000/exam).';
+$string['settings_portal_url'] = 'Next.js Admin & Proctor Dashboard URL';
+$string['settings_portal_url_desc'] = 'URL portal Next.js tempat Guru dan Proktor mengelola jadwal, peserta, nomor meja, dan memantau ujian secara langsung (default: http://localhost:3000).';
+$string['settings_default_timelimit'] = 'Default Durasi Ujian (Detik)';
+$string['settings_default_timelimit_desc'] = 'Durasi waktu pengerjaan default ketika membuat sesi ujian baru (contoh: 7200 untuk 120 menit).';
+$string['settings_default_maxstrikes'] = 'Batas Maksimal Pelanggaran Default';
+$string['settings_default_maxstrikes_desc'] = 'Jumlah toleransi pelanggaran (ganti tab, keluar layar penuh) sebelum sesi siswa dikunci secara otomatis.';
+
+
