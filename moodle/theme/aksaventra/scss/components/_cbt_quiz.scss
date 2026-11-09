@@ -1,0 +1,37 @@
+body.role-student#page-mod-quiz-attempt {
+    .aksaventra-sidebar,
+    .btn-sidebar-toggle,
+    .drawer-toggles,
+    .secondary-navigation {
+        display: none !important;
+    }
+
+    .aksaventra-main-viewport {
+        margin-left: 0 !important;
+    }
+
+    #page.drawers .main-inner {
+        max-width: 1080px !important;
+        margin: 1.25rem auto !important;
+        border-radius: 20px !important;
+        border-top: 5px solid #0097a7 !important;
+        box-shadow: 0 10px 30px -5px rgba(13, 43, 92, 0.1) !important;
+        padding: 2.25rem !important;
+    }
+
+    #quiz-timer-wrapper {
+        background: #fef2f2 !important;
+        border: 1.5px solid #fecaca !important;
+        color: #dc2626 !important;
+        padding: 0.5rem 1rem !important;
+        border-radius: 12px !important;
+        font-weight: 700 !important;
+    }
+
+    .qnbutton {
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        transition: transform 0.15s ease !important;
+        &:hover { transform: scale(1.06); }
+    }
+}

@@ -1,0 +1,282 @@
+{{> theme_boost/head }}
+
+<body {{{ bodyattributes }}}>
+{{> core/local/toast/wrapper}}
+<div id="page-wrapper" class="d-print-block aksaventra-app-shell">
+
+    {{{ output.standard_top_of_body_html }}}
+
+    {{! 1. LEFT SIDEBAR AKSAVENTRA }}
+    <aside id="aksaventra-sidebar" class="aksaventra-sidebar d-print-none" aria-label="Menu Utama">
+        <div class="aksaventra-sidebar-brand">
+            <a href="{{{ config.wwwroot }}}" class="d-flex align-items-center text-decoration-none gap-3">
+                <img src="{{{ config.wwwroot }}}/theme/aksaventra/pix/logo.png" alt="Aksaventra" class="aksaventra-sidebar-logo" />
+                <div class="aksaventra-brand-text">
+                    <span class="brand-main">AKSAVENTRA</span>
+                    <span class="brand-sub">PORTABLE CBT</span>
+                </div>
+            </a>
+            <button type="button" class="btn-close-sidebar d-lg-none" id="aksaventra-sidebar-close">&times;</button>
+        </div>
+
+        <div class="aksaventra-sidebar-nav-section">
+            <div class="sidebar-section-label">MENU UTAMA</div>
+            <ul class="aksaventra-nav-list list-unstyled mb-0">
+                {{#mobileprimarynav}}
+                    <li class="aksaventra-nav-item">
+                        <a href="{{{url}}}" class="aksaventra-nav-link {{#isactive}}active{{/isactive}}">
+                            <span class="nav-icon-bullet"></span>
+                            <span class="nav-text">{{{text}}}</span>
+                        </a>
+                    </li>
+                {{/mobileprimarynav}}
+            </ul>
+        </div>
+
+        {{#courseindex}}
+        <div class="aksaventra-sidebar-courseindex mt-3">
+            <div class="sidebar-section-label">INDEKS MATERI / UJIAN</div>
+            <div class="aksaventra-courseindex-inner">
+                {{{ courseindex }}}
+            </div>
+        </div>
+        {{/courseindex}}
+
+        <div class="aksaventra-sidebar-footer mt-auto">
+            <div class="sidebar-user-card">
+                <div class="user-info-meta">
+                    <div class="user-fullname text-truncate">{{{ currentusername }}}</div>
+                    <div class="user-role-badge">{{{ aksaventrarole }}}</div>
+                </div>
+                <a href="{{{ config.wwwroot }}}/login/logout.php?sesskey={{{ config.sesskey }}}" class="btn-sidebar-logout" title="Keluar / Logout">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                </a>
+            </div>
+        </div>
+    </aside>
+
+    <div id="aksaventra-sidebar-backdrop" class="aksaventra-sidebar-backdrop d-lg-none"></div>
+
+    {{! 2. MAIN VIEWPORT }}
+    <div class="aksaventra-main-viewport">
+        <header id="aksaventra-topbar" class="aksaventra-topbar sticky-top d-print-none">
+            <div class="topbar-left d-flex align-items-center gap-3">
+                <button type="button" id="aksaventra-sidebar-toggle" class="btn-sidebar-toggle" aria-label="Toggle Sidebar">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+                <div class="topbar-breadcrumb d-none d-md-block">
+                    {{{ output.navbar }}}
+                </div>
+            </div>
+
+            <div class="topbar-right d-flex align-items-center gap-3">
+                <div class="aksaventra-server-clock d-none d-sm-flex align-items-center gap-2">
+                    <span class="clock-dot"></span>
+                    <span id="aksaventra-live-clock">Waktu Server: --:--:--</span>
+                </div>
+                {{# output.edit_switch }}
+                    <div class="topbar-editswitch">
+                        {{{ output.edit_switch }}}
+                    </div>
+                {{/ output.edit_switch }}
+                <div class="topbar-plugins d-flex align-items-center">
+                    {{{ output.navbar_plugin_output }}}
+                </div>
+                <div class="topbar-usermenu">
+                    {{#usermenu}}
+                        {{> core/user_menu }}
+                    {{/usermenu}}
+                </div>
+            </div>
+        </header>
+
+        {{#hasblocks}}
+            {{< theme_boost/drawer }}
+                {{$id}}theme_boost-drawers-blocks{{/id}}
+                {{$drawerclasses}}drawer drawer-right{{#blockdraweropen}} show{{/blockdraweropen}}{{/drawerclasses}}
+                {{$drawercontent}}
+                    <section class="d-print-none" aria-label="{{#str}}blocks{{/str}}">
+                        {{{ addblockbutton }}}
+                        {{{ sidepreblocks }}}
+                    </section>
+                {{/drawercontent}}
+                {{$drawerpreferencename}}drawer-open-block{{/drawerpreferencename}}
+                {{$forceopen}}{{#forceblockdraweropen}}1{{/forceblockdraweropen}}{{^forceblockdraweropen}}0{{/forceblockdraweropen}}{{/forceopen}}
+                {{$drawerstate}}show-drawer-right{{/drawerstate}}
+                {{$tooltipplacement}}left{{/tooltipplacement}}
+                {{$drawercloseonresize}}1{{/drawercloseonresize}}
+                {{$closebuttontext}}{{#str}}closeblockdrawer, core{{/str}}{{/closebuttontext}}
+            {{/ theme_boost/drawer}}
+        {{/hasblocks}}
+
+        <div id="page" data-region="mainpage" data-usertour="scroller" class="drawers {{#blockdraweropen}}show-drawer-right{{/blockdraweropen}} drag-container">
+            <div id="topofscroll" class="main-inner">
+                <div class="drawer-toggles d-flex">
+                    {{#hasblocks}}
+                        <div class="drawer-toggler drawer-right-toggle ml-auto d-print-none">
+                            <button
+                                class="btn icon-no-margin"
+                                data-toggler="drawers"
+                                data-action="toggle"
+                                data-target="theme_boost-drawers-blocks"
+                                data-toggle="tooltip"
+                                data-placement="right"
+                                title="{{#str}}opendrawerblocks, core{{/str}}"
+                            >
+                                <span class="sr-only">{{#str}}opendrawerblocks, core{{/str}}</span>
+                                <span class="dir-rtl-hide">{{#pix}}t/blocks_drawer, core{{/pix}}</span>
+                                <span class="dir-ltr-hide">{{#pix}}t/blocks_drawer_rtl, core{{/pix}}</span>
+                            </button>
+                        </div>
+                    {{/hasblocks}}
+                </div>
+
+                {{{ output.full_header }}}
+
+                {{#secondarymoremenu}}
+                    <div class="secondary-navigation d-print-none">
+                        {{> core/moremenu}}
+                    </div>
+                {{/secondarymoremenu}}
+
+                <div id="page-content" class="pb-3 d-print-block">
+                    <div id="region-main-box">
+                        {{#hasregionmainsettingsmenu}}
+                        <div id="region-main-settings-menu" class="d-print-none">
+                            <div> {{{ regionmainsettingsmenu }}} </div>
+                        </div>
+                        {{/hasregionmainsettingsmenu}}
+                        <section id="region-main" aria-label="{{#str}}content{{/str}}">
+                            {{#hasregionmainsettingsmenu}}
+                                <div class="region_main_settings_menu_proxy"></div>
+                            {{/hasregionmainsettingsmenu}}
+                            {{{ output.course_content_header }}}
+                            {{#headercontent}}
+                                {{> core/activity_header }}
+                            {{/headercontent}}
+                            {{#overflow}}
+                                <div class="container-fluid tertiary-navigation">
+                                    <div class="navitem">
+                                        {{> core/url_select}}
+                                    </div>
+                                </div>
+                            {{/overflow}}
+                            {{{ output.main_content }}}
+                            {{{ output.activity_navigation }}}
+                            {{{ output.course_content_footer }}}
+                        </section>
+                    </div>
+                </div>
+            </div>
+            {{> theme_boost/footer }}
+        </div>
+    </div>
+
+    {{{ output.standard_after_main_region_html }}}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var toggleBtn = document.getElementById('aksaventra-sidebar-toggle');
+    var closeBtn = document.getElementById('aksaventra-sidebar-close');
+    var backdrop = document.getElementById('aksaventra-sidebar-backdrop');
+    var body = document.body;
+
+    function toggleSidebar() {
+        if (window.innerWidth >= 992) {
+            body.classList.toggle('aksaventra-sidebar-collapsed');
+        } else {
+            body.classList.toggle('aksaventra-sidebar-mobile-open');
+        }
+    }
+
+    if (toggleBtn) toggleBtn.addEventListener('click', toggleSidebar);
+    if (closeBtn) closeBtn.addEventListener('click', function() {
+        body.classList.remove('aksaventra-sidebar-mobile-open');
+    });
+    if (backdrop) backdrop.addEventListener('click', function() {
+        body.classList.remove('aksaventra-sidebar-mobile-open');
+    });
+
+    var clockEl = document.getElementById('aksaventra-live-clock');
+    if (clockEl) {
+        function updateClock() {
+            var now = new Date();
+            var h = String(now.getHours()).padStart(2, '0');
+            var m = String(now.getMinutes()).padStart(2, '0');
+            var s = String(now.getSeconds()).padStart(2, '0');
+            clockEl.textContent = 'Waktu: ' + h + ':' + m + ':' + s + ' WIB';
+        }
+        updateClock();
+        setInterval(updateClock, 1000);
+    }
+
+    // Fallback & Direct Handler for Admin Search Tabs (#linkroot, #linkusers, #linkcourses, #linkgrades, #linkmodules, #linkappearance, #linkserver, #linkreports, #linkdevelopment)
+    function activateAdminTabFromHash(hash) {
+        if (!hash || !hash.startsWith('#link')) return;
+        var targetPane = document.querySelector(hash);
+        if (!targetPane || !targetPane.classList.contains('tab-pane')) return;
+
+        // Deactivate all sibling tab-panes
+        var tabContent = targetPane.parentElement;
+        if (tabContent) {
+            var panes = tabContent.querySelectorAll('.tab-pane');
+            panes.forEach(function(p) {
+                p.classList.remove('active', 'show');
+            });
+        }
+        targetPane.classList.add('active', 'show');
+
+        // Update active state on nav-tabs / moremenu links
+        var navLinks = document.querySelectorAll('.secondary-navigation a[href="' + hash + '"], .nav-tabs a[href="' + hash + '"]');
+        if (navLinks.length > 0) {
+            var allLinks = document.querySelectorAll('.secondary-navigation .nav-link, .nav-tabs .nav-link');
+            allLinks.forEach(function(l) {
+                l.classList.remove('active');
+                l.setAttribute('aria-selected', 'false');
+            });
+            navLinks.forEach(function(l) {
+                l.classList.add('active');
+                l.setAttribute('aria-selected', 'true');
+            });
+        }
+    }
+
+    // Bind click on any tab link pointing to #link...
+    document.querySelectorAll('a[href^="#link"]').forEach(function(tabLink) {
+        tabLink.addEventListener('click', function(e) {
+            var hash = this.getAttribute('href');
+            if (hash && hash.startsWith('#link')) {
+                e.preventDefault();
+                if (history.pushState) {
+                    history.pushState(null, null, hash);
+                } else {
+                    window.location.hash = hash;
+                }
+                activateAdminTabFromHash(hash);
+            }
+        });
+    });
+
+    // Listen to hashchange (e.g. when user types or clicks URL with #linkusers)
+    window.addEventListener('hashchange', function() {
+        activateAdminTabFromHash(window.location.hash);
+    });
+
+    // Trigger on initial page load if URL already has #link...
+    if (window.location.hash && window.location.hash.startsWith('#link')) {
+        activateAdminTabFromHash(window.location.hash);
+        setTimeout(function() {
+            activateAdminTabFromHash(window.location.hash);
+        }, 150);
+    }
+});
+</script>
+{{#js}}
+M.util.js_pending('theme_boost/loader');
+require(['theme_boost/loader', 'theme_boost/drawers'], function(Loader, Drawers) {
+    M.util.js_complete('theme_boost/loader');
+});
+{{/js}}
+</body>
+</html>

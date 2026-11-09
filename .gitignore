@@ -9,7 +9,13 @@ Cargo.lock
 *.token
 *.zip
 .vault/
-.aksaventra_rt/
+.aksaventra_rt/*
+!.aksaventra_rt/moodle/
+.aksaventra_rt/moodle/*
+!.aksaventra_rt/moodle/theme/
+.aksaventra_rt/moodle/theme/*
+!.aksaventra_rt/moodle/theme/aksaventra/
+!.aksaventra_rt/moodle/theme/aksaventra/**
 .runtime_mount/
 
 # Raw Portable Folders (Abaikan binari & data runtime, simpan template/default config)
@@ -32,6 +38,10 @@ Cargo.lock
 /moodle/mod/*
 !/moodle/mod/cbt/
 !/moodle/mod/cbt/**
+!/moodle/theme/
+/moodle/theme/*
+!/moodle/theme/aksaventra/
+!/moodle/theme/aksaventra/**
 
 /moodledata/
 
