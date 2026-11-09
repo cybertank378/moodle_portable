@@ -103,6 +103,7 @@ $required_functions = [
     'mod_cbt_manage_groups' => 'mod_cbt\external\manage_groups',
     'mod_cbt_assign_group_to_exam' => 'mod_cbt\external\assign_group_to_exam',
     'mod_cbt_import_export' => 'mod_cbt\external\import_export',
+    'core_webservice_get_site_info' => 'core_webservice_external',
 ];
 
 foreach ($required_functions as $func_name => $classname) {

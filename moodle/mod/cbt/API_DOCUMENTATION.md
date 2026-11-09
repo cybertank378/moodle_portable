@@ -75,6 +75,106 @@ export async function callMoodleApi<T = any>(
 
 ---
 
+## 🔐 2. Autentikasi & Alur Login Siswa / Guru
+
+Aplikasi Next.js mengautentikasi pengguna secara langsung ke backend Moodle menggunakan endpoint token bawaan Moodle yang terhubung ke layanan `mod_cbt_service`.
+
+### A. Endpoint Login Pengguna (`/login/token.php`)
+Digunakan pada form login Next.js (`/login` atau `/student/login`) untuk memvalidasi NIS/username dan password.
+
+- **URL Endpoint**: `${NEXT_PUBLIC_MOODLE_URL}/login/token.php`
+- **HTTP Method**: `POST`
+- **Header**: `Content-Type: application/x-www-form-urlencoded`
+- **Parameter Request**:
+  | Parameter | Tipe | Wajib | Keterangan |
+  | :--- | :--- | :--- | :--- |
+  | `username` | `string` | Ya | NIS atau Username siswa / guru |
+  | `password` | `string` | Ya | Kata sandi akun Moodle |
+  | `service` | `string` | Ya | Wajib bernilai `mod_cbt_service` |
+
+- **Contoh Request (TypeScript / Next.js)**:
+  ```typescript
+  export async function loginUserToMoodle(username: string, password: string) {
+    const params = new URLSearchParams({
+      username: username.trim(),
+      password: password,
+      service: 'mod_cbt_service',
+    });
+
+    const response = await fetch(`${process.env.NEXT_PUBLIC_MOODLE_URL}/login/token.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    });
+
+    const data = await response.json();
+    if (data.error) {
+      throw new Error(data.error); // e.g. "Invalid login, please check your credentials"
+    }
+
+    // data.token berisi user session token unik siswa/guru
+    return data.token as string;
+  }
+  ```
+
+- **Contoh Response Berhasil**:
+  ```json
+  {
+    "token": "48b1d98e7ca6e91f08e452ef3a479b18",
+    "privatetoken": null
+  }
+  ```
+
+- **Contoh Response Gagal**:
+  ```json
+  {
+    "error": "Invalid login, please check your credentials",
+    "errorcode": "invalidlogin"
+  }
+  ```
+
+---
+
+### B. Endpoint Validasi Sesi & Profil Pengguna (`core_webservice_get_site_info`)
+Setelah token diperoleh dari login di atas, panggil API ini untuk mendapatkan data profil siswa/guru (ID Pengguna, Nama Lengkap, Peran/Admin).
+
+- **URL Endpoint**: `${NEXT_PUBLIC_MOODLE_URL}/webservice/rest/server.php`
+- **HTTP Method**: `POST`
+- **Parameter Request**:
+  | Parameter | Tipe | Wajib | Keterangan |
+  | :--- | :--- | :--- | :--- |
+  | `wstoken` | `string` | Ya | Token user yang didapatkan dari `/login/token.php` |
+  | `wsfunction` | `string` | Ya | Wajib diisi `core_webservice_get_site_info` |
+  | `moodlewsrestformat` | `string` | Ya | Wajib diisi `json` |
+
+- **Contoh Response JSON**:
+  ```json
+  {
+    "sitename": "Aksaventra CBT LMS",
+    "username": "1001",
+    "firstname": "Ahmad",
+    "lastname": "Dahlan",
+    "fullname": "Ahmad Dahlan",
+    "lang": "en",
+    "userid": 10,
+    "userpictureurl": "http://localhost:8080/theme/image.php/boost/core/1/u/f1",
+    "userissiteadmin": false
+  }
+  ```
+
+---
+
+### C. Single Sign-On (SSO) Handshake Launch Bridge (`/mod/cbt/launch.php`)
+Bagi siswa yang mengakses ujian langsung melalui antarmuka web Moodle:
+1. Siswa mengklik tombol **"Buka Aplikasi Ujian CBT (Next.js)"** di halaman aktivitas Moodle.
+2. Moodle men-generate `launch_token` sementara (berlaku 5 menit) dan me-redirect browser siswa ke:
+   ```
+   http://localhost:3000/exam?cbtid=1&cmid=1&launch_token=abc123xyz...&moodle_api=http://localhost:8080/webservice/rest/server.php
+   ```
+3. Frontend Next.js membaca parameter URL tersebut dan langsung membuka sesi ujian siswa tanpa perlu memasukkan username & password kembali.
+
+---
+
 ## 📚 3. Katalog Lengkap 12 REST API `mod_cbt`
 
 ---
@@ -537,3 +637,4 @@ Mengambil rekapitulasi nilai akhir, statistik ujian (rata-rata, nilai tertinggi/
 2. **Kesesuaian Format Excel**:
    - Seluruh payload CSV yang di-export menggunakan **UTF-8 BOM (`\xEF\xBB\xBF`)** dengan pemisah titik-koma (`;`).
    - Format ini menjamin berkas Excel langsung terbuka rapi dalam kolom-kolom terpisah di Microsoft Excel tanpa perlu wizard import teks.
+

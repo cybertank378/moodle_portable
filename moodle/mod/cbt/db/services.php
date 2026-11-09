@@ -126,6 +126,7 @@ $services = [
             'mod_cbt_manage_groups',
             'mod_cbt_assign_group_to_exam',
             'mod_cbt_import_export',
+            'core_webservice_get_site_info',
         ],
         'restrictedusers' => 0,
         'enabled' => 1,
