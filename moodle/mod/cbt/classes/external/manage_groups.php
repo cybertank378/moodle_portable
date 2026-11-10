@@ -36,7 +36,7 @@ class manage_groups extends external_api {
 
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
-            'action' => new external_value(PARAM_ALPHA, 'Action: list_classes, create_class, create_student, get_class_students'),
+            'action' => new external_value(PARAM_ALPHANUMEXT, 'Action: list_classes, create_class, create_student, get_class_students'),
             'payload' => new external_value(PARAM_RAW, 'JSON payload with relevant data', VALUE_DEFAULT, '{}'),
         ]);
     }
