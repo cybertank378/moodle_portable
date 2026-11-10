@@ -48,11 +48,41 @@ if ($ADMIN->fulltree) {
     $setting->set_updatedcallback('theme_reset_all_caches');
     $page->add($setting);
 
-    // Custom Brand Logo file
+    // Custom Brand Logo file upload (Sidebar)
     $name = 'theme_aksaventra/brand_logo';
     $title = get_string('brand_logo', 'theme_aksaventra');
     $description = get_string('brand_logo_desc', 'theme_aksaventra');
-    $setting = new admin_setting_configstoredfile($name, $title, $description, 'brand_logo');
+    $setting = new admin_setting_configstoredfile(
+        $name,
+        $title,
+        $description,
+        'brand_logo',
+        0,
+        [
+            'subdirs' => 0,
+            'maxfiles' => 1,
+            'accepted_types' => ['image', '.png', '.jpg', '.jpeg', '.svg', '.webp', '.ico']
+        ]
+    );
+    $setting->set_updatedcallback('theme_reset_all_caches');
+    $page->add($setting);
+
+    // Custom Login Logo file upload (Login Page)
+    $name = 'theme_aksaventra/login_logo';
+    $title = get_string('login_logo', 'theme_aksaventra');
+    $description = get_string('login_logo_desc', 'theme_aksaventra');
+    $setting = new admin_setting_configstoredfile(
+        $name,
+        $title,
+        $description,
+        'login_logo',
+        0,
+        [
+            'subdirs' => 0,
+            'maxfiles' => 1,
+            'accepted_types' => ['image', '.png', '.jpg', '.jpeg', '.svg', '.webp']
+        ]
+    );
     $setting->set_updatedcallback('theme_reset_all_caches');
     $page->add($setting);
 
@@ -67,7 +97,7 @@ if ($ADMIN->fulltree) {
 
     $settings->add($page);
 
-    // 2. Advanced SCSS Settings Page (Inherited from Boost pattern)
+    // 2. Advanced SCSS Settings Page
     $page = new admin_settingpage('theme_aksaventra_advanced', get_string('advancedsettings', 'theme_boost'));
 
     // Raw SCSS

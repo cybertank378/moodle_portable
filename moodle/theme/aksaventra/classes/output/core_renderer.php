@@ -15,6 +15,12 @@ class core_renderer extends \theme_boost\output\core_renderer {
      * @return string
      */
     public function get_brand_logo_url(): string {
+        $theme = \theme_config::load('aksaventra');
+        $fileurl = $theme->setting_file_url('brand_logo', 'brand_logo');
+        if (!empty($fileurl)) {
+            return $fileurl;
+        }
+
         $brand_logo = get_config('theme_aksaventra', 'brand_logo');
         if (!empty($brand_logo)) {
             return \moodle_url::make_pluginfile_url(
@@ -33,6 +39,21 @@ class core_renderer extends \theme_boost\output\core_renderer {
         }
 
         return $this->image_url('logo', 'theme_aksaventra')->out(false);
+    }
+
+    /**
+     * Get the login page hero logo URL.
+     *
+     * @return string
+     */
+    public function get_login_logo_url(): string {
+        $theme = \theme_config::load('aksaventra');
+        $fileurl = $theme->setting_file_url('login_logo', 'login_logo');
+        if (!empty($fileurl)) {
+            return $fileurl;
+        }
+
+        return $this->get_brand_logo_url();
     }
 
     /**

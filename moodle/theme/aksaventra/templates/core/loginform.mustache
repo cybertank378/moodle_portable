@@ -1,9 +1,9 @@
 <div class="aksaventra-login-split">
     <div class="aksaventra-brand-panel">
         <div class="aksaventra-brand-logo-wrap">
-            <img src="{{config.wwwroot}}/theme/aksaventra/pix/logo.png" alt="Logo Aksaventra" class="aksaventra-hero-logo" />
+            <img src="{{{ output.get_login_logo_url }}}" alt="{{{ output.get_brand_alt }}}" class="aksaventra-hero-logo" />
         </div>
-        <div class="brand-badge">AKSAVENTRA PORTABLE CBT</div>
+        <div class="brand-badge">{{{ output.get_brand_main }}} {{{ output.get_brand_sub }}}</div>
         <h1 class="brand-title">Sistem Evaluasi &amp; Pembelajaran Digital Terpadu</h1>
         <p class="brand-desc">
             Lingkungan ujian portabel berkeamanan tinggi dengan arsitektur terisolasi, cepat, dan stabil.
@@ -16,7 +16,7 @@
 
     <div class="aksaventra-form-panel">
         <div class="aksaventra-mobile-logo d-md-none mb-3 text-center">
-            <img src="{{config.wwwroot}}/theme/aksaventra/pix/apple-touch-icon.png" alt="Aksaventra" width="68" height="68" />
+            <img src="{{{ output.get_login_logo_url }}}" alt="{{{ output.get_brand_alt }}}" width="68" height="68" />
         </div>
 
         <h2 class="aksaventra-welcome-title">Selamat Datang 👋</h2>
