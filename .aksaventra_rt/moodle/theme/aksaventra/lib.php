@@ -40,6 +40,32 @@ function theme_aksaventra_get_extra_scss($theme) {
     if (!empty($theme->settings->scss)) {
         $scss .= "\n" . $theme->settings->scss;
     }
+    if (!empty($theme->settings->scsspost)) {
+        $scss .= "\n" . $theme->settings->scsspost;
+    }
 
     return $scss;
+}
+
+/**
+ * Serves any files associated with the theme settings.
+ *
+ * @param stdClass $course
+ * @param stdClass $cm
+ * @param context $context
+ * @param string $filearea
+ * @param array $args
+ * @param bool $forcedownload
+ * @param array $options
+ * @return bool
+ */
+function theme_aksaventra_pluginfile($course, $cm, $context, $filearea, $args, $forcedownload, array $options = []) {
+    if ($context->contextlevel != CONTEXT_SYSTEM) {
+        return false;
+    }
+    if ($filearea === 'brand_logo') {
+        $theme = theme_config::load('aksaventra');
+        return $theme->setting_file_serve('brand_logo', $args, $forcedownload, $options);
+    }
+    return false;
 }

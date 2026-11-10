@@ -67,6 +67,23 @@ if (is_siteadmin()) {
     }
 }
 
+// Brand settings loaded dynamically from theme/site configuration
+$brand_logo = method_exists($OUTPUT, 'get_brand_logo_url')
+    ? $OUTPUT->get_brand_logo_url()
+    : $OUTPUT->image_url('logo', 'theme_aksaventra')->out(false);
+
+$brand_main = method_exists($OUTPUT, 'get_brand_main')
+    ? $OUTPUT->get_brand_main()
+    : (!empty($SITE->shortname) ? format_string($SITE->shortname) : 'AKSAVENTRA');
+
+$brand_sub = method_exists($OUTPUT, 'get_brand_sub')
+    ? $OUTPUT->get_brand_sub()
+    : 'PORTABLE CBT';
+
+$brand_alt = method_exists($OUTPUT, 'get_brand_alt')
+    ? $OUTPUT->get_brand_alt()
+    : $brand_main;
+
 $templatecontext = [
     'sitename' => format_string($SITE->shortname, true, ['context' => \context_course::instance(SITEID), "escape" => false]),
     'output' => $OUTPUT,
@@ -89,6 +106,11 @@ $templatecontext = [
     'addblockbutton' => $addblockbutton,
     'aksaventrarole' => $rolelabel,
     'currentusername' => isloggedin() ? fullname($USER) : 'Guest',
+    'brand_logo' => $brand_logo,
+    'brand_alt' => $brand_alt,
+    'brand_main' => $brand_main,
+    'brand_sub' => $brand_sub,
+    'has_brand_sub' => !empty($brand_sub),
 ];
 
 echo $OUTPUT->render_from_template('theme_boost/drawers', $templatecontext);

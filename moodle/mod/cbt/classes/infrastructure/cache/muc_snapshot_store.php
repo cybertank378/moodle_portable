@@ -83,6 +83,10 @@ class muc_snapshot_store {
         $cache_keys->delete('keys_' . $cbtid);
     }
 
+    public static function invalidate(int $cbtid): void {
+        self::purge_cache($cbtid);
+    }
+
     /**
      * Build questions snapshot and private keys map from bank or fallback items.
      *

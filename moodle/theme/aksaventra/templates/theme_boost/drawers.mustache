@@ -10,10 +10,12 @@
     <aside id="aksaventra-sidebar" class="aksaventra-sidebar d-print-none" aria-label="Menu Utama">
         <div class="aksaventra-sidebar-brand">
             <a href="{{{ config.wwwroot }}}" class="d-flex align-items-center text-decoration-none gap-3">
-                <img src="{{{ config.wwwroot }}}/theme/aksaventra/pix/logo.png" alt="Aksaventra" class="aksaventra-sidebar-logo" />
+                <img src="{{{ brand_logo }}}" alt="{{{ brand_alt }}}" class="aksaventra-sidebar-logo" />
                 <div class="aksaventra-brand-text">
-                    <span class="brand-main">AKSAVENTRA</span>
-                    <span class="brand-sub">PORTABLE CBT</span>
+                    <span class="brand-main">{{{ brand_main }}}</span>
+                    {{#has_brand_sub}}
+                    <span class="brand-sub">{{{ brand_sub }}}</span>
+                    {{/has_brand_sub}}
                 </div>
             </a>
             <button type="button" class="btn-close-sidebar d-lg-none" id="aksaventra-sidebar-close">&times;</button>
