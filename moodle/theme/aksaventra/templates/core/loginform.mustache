@@ -1,0 +1,71 @@
+<div class="aksaventra-login-split">
+    <div class="aksaventra-brand-panel">
+        <div class="aksaventra-brand-logo-wrap">
+            <img src="{{config.wwwroot}}/theme/aksaventra/pix/logo.png" alt="Logo Aksaventra" class="aksaventra-hero-logo" />
+        </div>
+        <div class="brand-badge">AKSAVENTRA PORTABLE CBT</div>
+        <h1 class="brand-title">Sistem Evaluasi &amp; Pembelajaran Digital Terpadu</h1>
+        <p class="brand-desc">
+            Lingkungan ujian portabel berkeamanan tinggi dengan arsitektur terisolasi, cepat, dan stabil.
+        </p>
+        <div class="brand-status">
+            <span class="status-dot"></span>
+            <span>Portable Server Active &bull; Secure CBT Mode</span>
+        </div>
+    </div>
+
+    <div class="aksaventra-form-panel">
+        <div class="aksaventra-mobile-logo d-md-none mb-3 text-center">
+            <img src="{{config.wwwroot}}/theme/aksaventra/pix/apple-touch-icon.png" alt="Aksaventra" width="68" height="68" />
+        </div>
+
+        <h2 class="aksaventra-welcome-title">Selamat Datang 👋</h2>
+        <p class="aksaventra-welcome-subtitle">Masukkan kredensial akun peserta atau pengawas untuk melanjutkan.</p>
+
+        {{#maintenance}}
+            <div class="alert alert-danger login-maintenance">{{{maintenance}}}</div>
+        {{/maintenance}}
+
+        {{#error}}
+            <a href="#" id="loginerrormessage" class="sr-only">{{error}}</a>
+            <div class="alert alert-danger" role="alert">{{error}}</div>
+        {{/error}}
+
+        {{#info}}
+            <a href="#" id="logininfomessage" class="sr-only">{{info}}</a>
+            <div class="alert alert-info" role="alert">{{info}}</div>
+        {{/info}}
+
+        <form class="login-form" action="{{loginurl}}" method="post" id="login">
+            <input type="hidden" name="logintoken" value="{{logintoken}}">
+
+            <div class="login-form-username form-group mb-3">
+                <label for="username" class="form-label fw-semibold small text-secondary">Username / Nomor Peserta</label>
+                <input type="text" name="username" id="username"
+                    class="form-control form-control-lg"
+                    value="{{username}}"
+                    placeholder="Masukkan username Anda"
+                    autocomplete="username">
+            </div>
+
+            <div class="login-form-password form-group mb-3">
+                <label for="password" class="form-label fw-semibold small text-secondary">Password</label>
+                <div class="position-relative">
+                    <input type="password" name="password" id="password" value=""
+                        class="form-control form-control-lg"
+                        placeholder="Masukkan password Anda"
+                        autocomplete="current-password">
+                </div>
+            </div>
+
+            <div class="login-form-submit form-group">
+                <button class="btn btn-primary btn-lg w-100" type="submit" id="loginbtn">{{#str}}login{{/str}}</button>
+            </div>
+        </form>
+
+        <div class="aksaventra-footer-meta">
+            <img src="{{config.wwwroot}}/theme/aksaventra/pix/favicon-96x96.png" alt="" width="20" height="20" />
+            <span>Powered by Aksaventra CBT Engine</span>
+        </div>
+    </div>
+</div>

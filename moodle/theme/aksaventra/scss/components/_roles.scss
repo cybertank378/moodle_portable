@@ -1,0 +1,29 @@
+body.role-student {
+    .aksaventra-sidebar {
+        background: linear-gradient(180deg, #0d2b5c 0%, #061326 100%);
+    }
+    .aksaventra-topbar {
+        border-bottom: 2px solid rgba(0, 151, 167, 0.25);
+    }
+}
+
+body.role-teacher {
+    .aksaventra-sidebar {
+        background: linear-gradient(180deg, #1e1b4b 0%, #0f172a 100%);
+        .user-role-badge { color: #a5b4fc !important; }
+    }
+    .aksaventra-topbar {
+        border-bottom: 3px solid #0097a7;
+    }
+}
+
+body.role-admin {
+    .aksaventra-sidebar {
+        background: linear-gradient(180deg, #090d16 0%, #020617 100%);
+        border-right: 1px solid rgba(234, 179, 8, 0.25);
+        .user-role-badge { color: #fde047 !important; }
+    }
+    .aksaventra-topbar {
+        border-bottom: 3px solid #eab308;
+    }
+}

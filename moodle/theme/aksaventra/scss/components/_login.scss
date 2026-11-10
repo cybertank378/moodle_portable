@@ -1,0 +1,211 @@
+body#page-login-index {
+    background-color: #061326 !important;
+    background-image: 
+        radial-gradient(at 15% 15%, rgba(0, 151, 167, 0.35) 0px, transparent 50%),
+        radial-gradient(at 85% 85%, rgba(13, 43, 92, 0.55) 0px, transparent 50%),
+        radial-gradient(at 50% 50%, #061326 0px, transparent 100%) !important;
+    background-size: cover !important;
+    background-attachment: fixed !important;
+}
+
+#page-login-index .login-wrapper {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-height: 100vh !important;
+    padding: 1.5rem !important;
+}
+
+#page-login-index .login-container {
+    max-width: 940px !important;
+    width: 100% !important;
+    padding: 0 !important;
+    border-radius: 28px !important;
+    background: transparent !important;
+    box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
+    overflow: hidden !important;
+    border: none !important;
+}
+
+.aksaventra-login-split {
+    display: flex;
+    flex-direction: row;
+    background: #ffffff;
+    min-height: 540px;
+}
+
+.aksaventra-brand-panel {
+    flex: 1.05;
+    padding: 3.25rem 3rem;
+    color: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background-image: 
+        radial-gradient(circle at 15% 20%, rgba(0, 172, 193, 0.28) 0%, transparent 55%),
+        linear-gradient(145deg, #0d2b5c 0%, #06152d 100%);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+
+    .aksaventra-brand-logo-wrap {
+        margin-bottom: 1.5rem;
+
+        .aksaventra-hero-logo {
+            width: 88px;
+            height: 88px;
+            object-fit: contain;
+            background: rgba(255, 255, 255, 0.98);
+            padding: 10px;
+            border-radius: 20px;
+            box-shadow: 0 12px 25px -5px rgba(0, 0, 0, 0.35);
+        }
+    }
+
+    .brand-badge {
+        display: inline-block;
+        align-self: flex-start;
+        background: rgba(234, 179, 8, 0.18);
+        border: 1px solid rgba(234, 179, 8, 0.45);
+        color: #fde047;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        padding: 0.35rem 0.85rem;
+        border-radius: 999px;
+        margin-bottom: 1.15rem;
+    }
+
+    .brand-title {
+        font-size: 1.75rem;
+        font-weight: 800;
+        color: #ffffff;
+        line-height: 1.25;
+        margin-bottom: 0.85rem;
+        letter-spacing: -0.02em;
+    }
+
+    .brand-desc {
+        color: #cbd5e1;
+        font-size: 0.92rem;
+        line-height: 1.65;
+        margin-bottom: 2rem;
+    }
+
+    .brand-status {
+        margin-top: auto;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-size: 0.8rem;
+        color: #94a3b8;
+        background: rgba(6, 19, 38, 0.65);
+        padding: 0.6rem 1rem;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #00acc1;
+            box-shadow: 0 0 8px #00acc1;
+        }
+    }
+}
+
+.aksaventra-form-panel {
+    flex: 1;
+    padding: 3.25rem 3rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background: #ffffff;
+
+    .aksaventra-welcome-title {
+        font-size: 1.75rem;
+        font-weight: 800;
+        color: #0d2b5c;
+        letter-spacing: -0.03em;
+        margin-bottom: 0.35rem;
+    }
+
+    .aksaventra-welcome-subtitle {
+        font-size: 0.9rem;
+        color: #64748b;
+        margin-bottom: 1.85rem;
+    }
+
+    .form-control {
+        border-radius: 14px !important;
+        padding: 0.85rem 1rem 0.85rem 2.85rem !important;
+        border: 1.5px solid #e2e8f0 !important;
+        background-color: #f8fafc !important;
+        font-size: 0.95rem !important;
+        color: #0f172a !important;
+        transition: all 0.2s ease !important;
+        background-repeat: no-repeat !important;
+        background-position: 1rem center !important;
+        background-size: 1.2rem 1.2rem !important;
+
+        &:focus {
+            background-color: #ffffff !important;
+            border-color: #0097a7 !important;
+            box-shadow: 0 0 0 4px rgba(0, 151, 167, 0.15) !important;
+        }
+    }
+
+    input#username {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%230d2b5c' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z'/%3E%3C/svg%3E") !important;
+    }
+
+    input#password {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%230d2b5c' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z'/%3E%3C/svg%3E") !important;
+    }
+
+    #loginbtn {
+        border-radius: 14px !important;
+        padding: 0.95rem !important;
+        font-weight: 600 !important;
+        font-size: 0.95rem !important;
+        background: linear-gradient(135deg, #0d2b5c 0%, #0097a7 100%) !important;
+        border: none !important;
+        color: #ffffff !important;
+        box-shadow: 0 10px 20px -5px rgba(13, 43, 92, 0.4) !important;
+        transition: all 0.2s ease !important;
+        margin-top: 0.5rem !important;
+
+        &:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 25px -5px rgba(0, 151, 167, 0.5) !important;
+        }
+    }
+
+    .aksaventra-footer-meta {
+        margin-top: 2rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid #f1f5f9;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+        font-size: 0.78rem;
+        color: #64748b;
+        font-weight: 600;
+    }
+}
+
+@media (max-width: 768px) {
+    .aksaventra-login-split {
+        flex-direction: column;
+    }
+    .aksaventra-brand-panel,
+    .aksaventra-form-panel {
+        padding: 2rem;
+    }
+}
+
+#page-login-index .login-divider,
+#page-login-index #guestlogin,
+#page-login-index .login-languagemenu,
+#page-login-index button[data-action="show-cookie-notice"] {
+    display: none !important;
+}
