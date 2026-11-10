@@ -36,7 +36,7 @@ class import_export extends external_api {
 
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
-            'action' => new external_value(PARAM_ALPHA, 'Action: import_students, export_students, import_questions, export_results'),
+            'action' => new external_value(PARAM_ALPHANUMEXT, 'Action: import_students, export_students, import_questions, export_results'),
             'cbtid' => new external_value(PARAM_INT, 'The CBT instance ID', VALUE_DEFAULT, 0),
             'payload' => new external_value(PARAM_RAW, 'CSV string payload for import actions', VALUE_DEFAULT, ''),
         ]);
