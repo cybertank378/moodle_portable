@@ -96,6 +96,28 @@ class core_renderer extends \theme_boost\output\core_renderer {
         return $this->get_brand_main();
     }
 
+    /**
+     * Renders the login form with custom Aksaventra branding contexts.
+     *
+     * @param \core_auth\output\login $form The renderable login form.
+     * @return string
+     */
+    public function render_login(\core_auth\output\login $form) {
+        global $CFG, $SITE;
+
+        $context = $form->export_for_template($this);
+        $context->errorformatted = $this->error_text($context->error);
+        $context->logourl = $this->get_login_logo_url();
+        $context->brand_logo = $this->get_brand_logo_url();
+        $context->login_logo = $this->get_login_logo_url();
+        $context->brand_main = $this->get_brand_main();
+        $context->brand_sub = $this->get_brand_sub();
+        $context->brand_alt = $this->get_brand_alt();
+        $context->output = $this;
+
+        return $this->render_from_template('core/loginform', $context);
+    }
+
     public function body_attributes($additionalclasses = []) {
         global $USER, $COURSE;
 

@@ -139,6 +139,7 @@ impl ServiceOrchestrator {
 
         // Bersihkan residu file PID lama untuk mencegah crash permission denied saat restart
         Self::cleanup_stale_pid_files(&paths.mariadb_dir.join("data"));
+        Self::ensure_mariadb_data_unhidden(&paths.mariadb_dir.join("data"));
 
         Self::ensure_mariadb_initialized(paths)?;
 
@@ -448,6 +449,45 @@ impl ServiceOrchestrator {
         }
     }
 
+    /// Memastikan folder database dan tabel tidak berstatus Hidden/System agar terdeteksi MariaDB
+    pub fn ensure_mariadb_data_unhidden(data_dir: &Path) {
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStrExt;
+            use winapi::um::fileapi::{GetFileAttributesW, SetFileAttributesW, INVALID_FILE_ATTRIBUTES};
+            use winapi::um::winnt::{FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_SYSTEM};
+
+            if let Ok(entries) = fs::read_dir(data_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+                    unsafe {
+                        let attrs = GetFileAttributesW(wide.as_ptr());
+                        if attrs != INVALID_FILE_ATTRIBUTES && (attrs & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) != 0) {
+                            let new_attrs = attrs & !(FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+                            SetFileAttributesW(wide.as_ptr(), if new_attrs == 0 { FILE_ATTRIBUTE_NORMAL } else { new_attrs });
+                        }
+                    }
+                    if path.is_dir() {
+                        if let Ok(sub_entries) = fs::read_dir(&path) {
+                            for sub in sub_entries.flatten() {
+                                let sub_path = sub.path();
+                                let sub_wide: Vec<u16> = sub_path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+                                unsafe {
+                                    let sub_attrs = GetFileAttributesW(sub_wide.as_ptr());
+                                    if sub_attrs != INVALID_FILE_ATTRIBUTES && (sub_attrs & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) != 0) {
+                                        let new_sub = sub_attrs & !(FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+                                        SetFileAttributesW(sub_wide.as_ptr(), if new_sub == 0 { FILE_ATTRIBUTE_NORMAL } else { new_sub });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Memastikan tidak ada daemon server yang menggantung di latar belakang
     pub fn kill_lingering_daemons() {
         let _ = Command::new("taskkill")
@@ -465,6 +505,7 @@ pub fn start_mariadb(rt_dir: &Path) -> std::io::Result<Child> {
     let my_ini = paths.mariadb_dir.join("data").join("my.ini");
 
     ServiceOrchestrator::cleanup_stale_pid_files(&paths.mariadb_dir.join("data"));
+    ServiceOrchestrator::ensure_mariadb_data_unhidden(&paths.mariadb_dir.join("data"));
 
     Command::new(maria_bin)
         .arg(format!("--defaults-file={}", my_ini.display()))
