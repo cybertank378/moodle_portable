@@ -8,6 +8,7 @@ Cargo.lock
 *.lic
 *.token
 *.zip
+aksaventra-dist/
 .vault/
 .aksaventra_rt/*
 !.aksaventra_rt/moodle/
