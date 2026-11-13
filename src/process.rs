@@ -137,6 +137,9 @@ impl ServiceOrchestrator {
             return Err(anyhow!("Binary mysqld.exe tidak ditemukan di {:?}", mysqld_bin));
         }
 
+        // Bersihkan residu file PID lama untuk mencegah crash permission denied saat restart
+        Self::cleanup_stale_pid_files(&paths.mariadb_dir.join("data"));
+
         Self::ensure_mariadb_initialized(paths)?;
 
         self.mariadb_proc = Some(
@@ -423,6 +426,28 @@ impl ServiceOrchestrator {
         Ok(())
     }
 
+    /// Membersihkan residu file .pid lama yang dapat terkunci atau berstatus hidden
+    pub fn cleanup_stale_pid_files(data_dir: &Path) {
+        if let Ok(entries) = fs::read_dir(data_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("pid") {
+                    #[cfg(windows)]
+                    {
+                        use std::os::windows::ffi::OsStrExt;
+                        use winapi::um::fileapi::SetFileAttributesW;
+                        use winapi::um::winnt::FILE_ATTRIBUTE_NORMAL;
+                        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+                        unsafe {
+                            SetFileAttributesW(wide.as_ptr(), FILE_ATTRIBUTE_NORMAL);
+                        }
+                    }
+                    let _ = fs::remove_file(&path);
+                }
+            }
+        }
+    }
+
     /// Memastikan tidak ada daemon server yang menggantung di latar belakang
     pub fn kill_lingering_daemons() {
         let _ = Command::new("taskkill")
@@ -438,6 +463,8 @@ pub fn start_mariadb(rt_dir: &Path) -> std::io::Result<Child> {
     let paths = PortablePaths::from_base_dir(rt_dir.to_path_buf());
     let maria_bin = paths.mariadb_dir.join("bin").join("mysqld.exe");
     let my_ini = paths.mariadb_dir.join("data").join("my.ini");
+
+    ServiceOrchestrator::cleanup_stale_pid_files(&paths.mariadb_dir.join("data"));
 
     Command::new(maria_bin)
         .arg(format!("--defaults-file={}", my_ini.display()))
