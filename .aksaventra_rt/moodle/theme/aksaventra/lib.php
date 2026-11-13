@@ -63,9 +63,9 @@ function theme_aksaventra_pluginfile($course, $cm, $context, $filearea, $args, $
     if ($context->contextlevel != CONTEXT_SYSTEM) {
         return false;
     }
-    if ($filearea === 'brand_logo') {
+    if ($filearea === 'brand_logo' || $filearea === 'login_logo' || $filearea === 'logo') {
         $theme = theme_config::load('aksaventra');
-        return $theme->setting_file_serve('brand_logo', $args, $forcedownload, $options);
+        return $theme->setting_file_serve($filearea, $args, $forcedownload, $options);
     }
     return false;
 }
