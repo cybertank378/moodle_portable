@@ -11,7 +11,16 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use tar::Archive;
 
-pub const PROTECTED_DIRS: [&str; 7] = ["nginx", "php", "moodle", "moodledata", "mariadb", "nodejs", "dashboard"];
+pub const PROTECTED_DIRS: [&str; 8] = [
+    "nginx",
+    "php",
+    "moodle",
+    "moodledata",
+    "mariadb",
+    "nodejs",
+    "dashboard",
+    "aksaventra-dist",
+];
 pub const NONCE_SIZE: usize = 12;
 
 pub struct VaultContainer;
@@ -483,12 +492,15 @@ mod tests {
 
     #[test]
     fn test_protected_dirs_constant() {
-        assert_eq!(PROTECTED_DIRS.len(), 5);
+        assert_eq!(PROTECTED_DIRS.len(), 8);
         assert!(PROTECTED_DIRS.contains(&"nginx"));
         assert!(PROTECTED_DIRS.contains(&"php"));
         assert!(PROTECTED_DIRS.contains(&"moodle"));
         assert!(PROTECTED_DIRS.contains(&"moodledata"));
         assert!(PROTECTED_DIRS.contains(&"mariadb"));
+        assert!(PROTECTED_DIRS.contains(&"nodejs"));
+        assert!(PROTECTED_DIRS.contains(&"dashboard"));
+        assert!(PROTECTED_DIRS.contains(&"aksaventra-dist"));
     }
 
     #[test]
