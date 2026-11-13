@@ -193,13 +193,182 @@ body#page-login-index {
     }
 }
 
-@media (max-width: 768px) {
-    .aksaventra-login-split {
-        flex-direction: column;
+@media (max-width: 991.98px) {
+    #page-login-index .login-container {
+        max-width: 720px !important;
+        border-radius: 22px !important;
     }
     .aksaventra-brand-panel,
     .aksaventra-form-panel {
-        padding: 2rem;
+        padding: 2.5rem 2rem;
+    }
+}
+
+@media (max-width: 768px) {
+    #page-login-index .login-wrapper {
+        padding: 1rem !important;
+    }
+    #page-login-index .login-container {
+        border-radius: 18px !important;
+    }
+    .aksaventra-login-split {
+        flex-direction: column;
+        min-height: auto;
+    }
+    .aksaventra-brand-panel {
+        padding: 2rem 1.5rem 1.5rem 1.5rem;
+        border-right: none;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+
+        .brand-desc {
+            margin-bottom: 1.25rem;
+        }
+    }
+    .aksaventra-form-panel {
+        padding: 2rem 1.5rem;
+    }
+}
+
+@media (max-width: 575.98px) {
+    #page-login-index .login-wrapper {
+        padding: 0.75rem !important;
+    }
+    #page-login-index .login-container {
+        border-radius: 16px !important;
+    }
+    .aksaventra-brand-panel {
+        padding: 1.5rem 1.25rem 1rem 1.25rem;
+
+        .aksaventra-brand-logo-wrap {
+            margin-bottom: 0.75rem;
+            .aksaventra-hero-logo {
+                width: 56px;
+                height: 56px;
+                padding: 6px;
+                border-radius: 14px;
+            }
+        }
+        .brand-badge {
+            font-size: 0.65rem;
+            padding: 0.25rem 0.65rem;
+            margin-bottom: 0.5rem;
+        }
+        .brand-title {
+            font-size: 1.25rem;
+            margin-bottom: 0.35rem;
+        }
+        .brand-desc,
+        .brand-status {
+            display: none !important;
+        }
+    }
+    .aksaventra-form-panel {
+        padding: 1.5rem 1.25rem;
+
+        .aksaventra-mobile-logo {
+            display: none !important;
+        }
+        .aksaventra-welcome-title {
+            font-size: 1.35rem;
+        }
+        .aksaventra-welcome-subtitle {
+            font-size: 0.82rem;
+            margin-bottom: 1.25rem;
+        }
+        .form-control {
+            padding: 0.75rem 0.85rem 0.75rem 2.5rem !important;
+            font-size: 0.9rem !important;
+        }
+    }
+}
+
+/* Ultra-small Screen & QVGA 240x320 (<= 320px & <= 240px) */
+@media (max-width: 320px) {
+    #page-login-index .login-wrapper {
+        padding: 0.25rem !important;
+        min-height: 100vh !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    #page-login-index .login-container {
+        border-radius: 12px !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-shadow: none !important;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    }
+
+    .aksaventra-brand-panel {
+        display: none !important;
+    }
+
+    .aksaventra-form-panel {
+        padding: 0.85rem 0.65rem !important;
+
+        .aksaventra-mobile-logo {
+            display: block !important;
+            margin-bottom: 0.5rem !important;
+
+            img {
+                width: 44px !important;
+                height: 44px !important;
+                object-fit: contain !important;
+                background: #ffffff !important;
+                padding: 4px !important;
+                border-radius: 10px !important;
+                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15) !important;
+            }
+        }
+
+        .aksaventra-welcome-title {
+            font-size: 1.05rem !important;
+            text-align: center;
+            margin-bottom: 0.2rem !important;
+        }
+
+        .aksaventra-welcome-subtitle {
+            font-size: 0.72rem !important;
+            text-align: center;
+            margin-bottom: 0.75rem !important;
+        }
+
+        .form-group {
+            margin-bottom: 0.65rem !important;
+
+            .form-label {
+                font-size: 0.7rem !important;
+                margin-bottom: 0.2rem !important;
+            }
+        }
+
+        .form-control {
+            font-size: 0.78rem !important;
+            padding: 0.5rem 0.5rem 0.5rem 1.9rem !important;
+            background-position: 0.5rem center !important;
+            background-size: 0.9rem 0.9rem !important;
+            border-radius: 8px !important;
+        }
+
+        #loginbtn {
+            padding: 0.55rem !important;
+            font-size: 0.82rem !important;
+            border-radius: 8px !important;
+            margin-top: 0.35rem !important;
+        }
+
+        .aksaventra-footer-meta {
+            font-size: 0.62rem !important;
+            margin-top: 0.75rem !important;
+            padding-top: 0.5rem !important;
+            gap: 0.25rem !important;
+
+            img {
+                width: 14px !important;
+                height: 14px !important;
+            }
+        }
     }
 }
 

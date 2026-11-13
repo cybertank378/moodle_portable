@@ -11,6 +11,84 @@ body {
     margin-top: 1rem;
 }
 
+@media (max-width: 991.98px) {
+    #page.drawers .main-inner {
+        padding: 1.5rem;
+        border-radius: 16px;
+    }
+}
+
+@media (max-width: 768px) {
+    #page.drawers .main-inner {
+        padding: 1.15rem;
+        border-radius: 14px;
+        margin-top: 0.5rem;
+    }
+    .card {
+        border-radius: 12px;
+    }
+}
+
+@media (max-width: 575.98px) {
+    #page.drawers .main-inner {
+        padding: 0.85rem;
+        border-radius: 12px;
+    }
+    .secondary-navigation .nav-tabs .nav-link {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.82rem;
+    }
+}
+
+/* Ultra-small Screen & QVGA 240x320 (<= 320px & <= 240px) */
+@media (max-width: 320px) {
+    html, body {
+        overflow-x: hidden !important;
+        width: 100% !important;
+    }
+
+    #page.drawers {
+        padding-left: 0.25rem !important;
+        padding-right: 0.25rem !important;
+    }
+
+    #page.drawers .main-inner {
+        padding: 0.65rem 0.45rem !important;
+        border-radius: 8px !important;
+        margin-top: 0.25rem !important;
+    }
+
+    .card {
+        border-radius: 8px !important;
+        padding: 0.5rem !important;
+    }
+
+    .secondary-navigation {
+        margin-bottom: 0.75rem;
+        .nav-tabs .nav-link {
+            padding: 0.35rem 0.45rem !important;
+            font-size: 0.72rem !important;
+        }
+    }
+
+    table {
+        display: block;
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        font-size: 0.75rem;
+    }
+
+    h1, .h1 { font-size: 1.15rem !important; }
+    h2, .h2 { font-size: 1.05rem !important; }
+    h3, .h3 { font-size: 0.95rem !important; }
+    h4, .h4 { font-size: 0.85rem !important; }
+
+    p, span, a, label {
+        word-break: break-word;
+    }
+}
+
 .secondary-navigation {
     margin-bottom: 1.5rem;
     .moremenu {
