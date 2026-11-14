@@ -367,16 +367,50 @@ impl ServiceOrchestrator {
         let inline_php = r#"
             define('CLI_SCRIPT', true);
             require('config.php');
-            // Hapus residu plugin yang di-prune dari disk (Missing from disk!)
-            ->delete_records('config_plugins', ['plugin' => 'forumreport_summary']);
+            global $DB, $CFG;
+
+            // Daftar seluruh komponen yang telah di-prune dari disk
+            $pruned = [
+                'mod_scorm', 'mod_workshop',
+                'scormreport_basic', 'scormreport_graphs', 'scormreport_interactions', 'scormreport_objectives',
+                'workshopform_accumulative', 'workshopform_comments', 'workshopform_numerrors', 'workshopform_rubric',
+                'workshopallocation_manual', 'workshopallocation_random', 'workshopallocation_scheduled',
+                'workshopeval_best',
+                'block_badges', 'block_blog_tags', 'block_comments', 'block_tag_flickr', 'block_tags',
+                'tool_moodlenet', 'forumreport_summary',
+            ];
+
+            foreach ($pruned as $comp) {
+                $DB->delete_records('config_plugins', ['plugin' => $comp]);
+                $DB->delete_records('upgrade_log', ['plugin' => $comp]);
+                $DB->delete_records('capabilities', ['component' => $comp]);
+            }
+
+            foreach (['scorm', 'workshop'] as $mod) {
+                $DB->delete_records('modules', ['name' => $mod]);
+            }
+
+            foreach (['badges', 'blog_tags', 'comments', 'tag_flickr', 'tags'] as $blk) {
+                $DB->delete_records('block', ['name' => $blk]);
+                $DB->delete_records('block_instances', ['blockname' => $blk]);
+            }
+
+            // Hapus muc/config.php jika mengandung datasource lama yang hilang
+            $muc_cfg = $CFG->dataroot . '/muc/config.php';
+            if (file_exists($muc_cfg)) {
+                @unlink($muc_cfg);
+            }
+
             // Matikan fitur berat Moodle untuk mode ujian (CBT)
             set_config('enableanalytics', 0);
             set_config('messaging', 0);
             set_config('enableblogs', 0);
             set_config('enablecompetencies', 0);
             set_config('enablebadges', 0);
-            ->set_field('modules', 'visible', 0, ['name' => 'forum']);
-            ->set_field('task_scheduled', 'disabled', 1, ['classname' => '\mod_forum\task\cron_task']);
+            set_config('usecomments', 0);
+            set_config('usetags', 0);
+            $DB->set_field('modules', 'visible', 0, ['name' => 'forum']);
+            $DB->set_field('task_scheduled', 'disabled', 1, ['classname' => '\mod_forum\task\cron_task']);
         "#;
 
         // Eksekusi cleanup database
@@ -395,7 +429,7 @@ impl ServiceOrchestrator {
 
         match status_db {
             Ok(s) if s.success() => {
-                println!("  [OK] Residu forumreport_summary dibersihkan & setelan CBT diterapkan.");
+                println!("  [OK] Residu plugin berhasil dibersihkan & setelan performa CBT aktif.");
             }
             _ => {
                 println!("  [WARN] Penyesuaian database Moodle dilewati (tabel belum siap atau mode offline).");
