@@ -240,17 +240,17 @@ impl ServiceOrchestrator {
     pub fn start_nextjs(&mut self, paths: &PortablePaths) -> Result<()> {
         let node_bin = paths.nodejs_dir.join("node.exe");
         if !node_bin.exists() {
-            println!("  [INFO] Runtime Node.js portabel tidak ditemukan di {:?}, melewati Next.js.", paths.nodejs_dir);
+            println!("  [INFO] Runtime Node.js portabel tidak ditemukan di {:?}, melewati Aksaventra CBT.", paths.nodejs_dir);
             return Ok(());
         }
 
         let dashboard_dir = &paths.dashboard_dir;
         if !dashboard_dir.exists() {
-            println!("  [INFO] Direktori Next.js/Dashboard tidak ditemukan di {:?}, melewati Next.js.", dashboard_dir);
+            println!("  [INFO] Direktori Aksaventra Dashboard tidak ditemukan di {:?}, melewati Aksaventra CBT.", dashboard_dir);
             return Ok(());
         }
 
-        println!("[ENGINE] Menyalakan Next.js CBT Server (Port {})...", NEXTJS_PORT);
+        println!("[ENGINE] Menyalakan Aksaventra CBT Server (Port {})...", NEXTJS_PORT);
 
         // 1. Pastikan database aksaventra_cbt tersedia di MariaDB
         let mysql_bin = paths.mariadb_dir.join("bin").join("mysql.exe");
@@ -307,16 +307,16 @@ impl ServiceOrchestrator {
                 cmd.arg(&next_cli).args(["dev", "-p", &NEXTJS_PORT.to_string()]);
             }
         } else {
-            println!("  [WARN] Modul Next.js CLI tidak ditemukan di {:?}.", dashboard_dir);
+            println!("  [WARN] Modul Aksaventra CLI tidak ditemukan di {:?}.", dashboard_dir);
             return Ok(());
         }
 
-        self.nextjs_proc = Some(cmd.spawn().with_context(|| "Gagal mengeksekusi Next.js server")?);
+        self.nextjs_proc = Some(cmd.spawn().with_context(|| "Gagal mengeksekusi Aksaventra CBT server")?);
 
         if wait_for_port(NEXTJS_PORT, Duration::from_secs(10)) {
-            println!("  [OK] Next.js CBT Server aktif di port {}.", NEXTJS_PORT);
+            println!("  [OK] Aksaventra CBT Server aktif di port {}.", NEXTJS_PORT);
         } else {
-            println!("  [INFO] Next.js CBT Server telah dijalankan di background (port {}).", NEXTJS_PORT);
+            println!("  [INFO] Aksaventra CBT Server telah dijalankan di background (port {}).", NEXTJS_PORT);
         }
 
         Ok(())
@@ -350,12 +350,12 @@ impl ServiceOrchestrator {
         }
         println!("  [OK] PHP FastCGI Daemon dihentikan.");
 
-        // Hentikan Next.js CBT Server
+        // Hentikan Aksaventra CBT Server
         if let Some(mut child) = self.nextjs_proc.take() {
             let _ = child.kill();
             let _ = child.wait();
         }
-        println!("  [OK] Next.js CBT Server dihentikan.");
+        println!("  [OK] Aksaventra CBT Server dihentikan.");
 
         // 3. Hentikan MariaDB secara bersih via mysqladmin shutdown agar tabel tidak korup
         let mysqladmin_bin = paths.mariadb_dir.join("bin").join("mysqladmin.exe");

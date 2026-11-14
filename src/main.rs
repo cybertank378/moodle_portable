@@ -157,7 +157,7 @@ async fn main() -> Result<()> {
     println!("======================================================");
     let next_local_url = format!("http://localhost:{}", process::NEXTJS_PORT);
     let next_lan_url = format!("http://{}:{}", active_ip, process::NEXTJS_PORT);
-    println!("  Akses CBT Dashboard (Next.js): {}", next_local_url);
+    println!("  Akses CBT Dashboard (Aksaventra): {}", next_local_url);
     if active_ip != "127.0.0.1" {
         println!("  Akses CBT Jaringan (LAN/Wi-Fi): {}", next_lan_url);
     }
@@ -165,7 +165,7 @@ async fn main() -> Result<()> {
     if active_ip != "127.0.0.1" {
         println!("  Akses Moodle Jaringan        : {}", lan_url);
     }
-    println!("  Status Layanan               : MariaDB ({}), PHP ({} Workers), Nginx, Node.js (Next.js :3000)", active_profile.buffer_pool, active_profile.workers);
+    println!("  Status Layanan               : MariaDB ({}), PHP ({} Workers), Nginx, Node.js (Aksaventra :3000)", active_profile.buffer_pool, active_profile.workers);
     println!("  Profil / Kapasitas CBT      : {} ({})", active_profile.name, active_profile.estimated_cbt_users);
     println!("======================================================");
     println!("  Tekan Ctrl+C untuk menutup dan mengamankan data.     ");
