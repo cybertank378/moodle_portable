@@ -60,12 +60,8 @@ impl PortablePaths {
 
         let dashboard_dir = if runtime_dir.join("aksaventra-dist").exists() {
             runtime_dir.join("aksaventra-dist")
-        } else if runtime_dir.join("dashboard").exists() {
-            runtime_dir.join("dashboard")
         } else if base_dir.join("aksaventra-dist").exists() {
             base_dir.join("aksaventra-dist")
-        } else if base_dir.join("dashboard").exists() {
-            base_dir.join("dashboard")
         } else {
             runtime_dir.join("aksaventra-dist")
         };
