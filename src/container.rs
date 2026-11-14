@@ -295,6 +295,7 @@ impl VaultContainer {
         // Jika komponen penting sudah lengkap di runtime_dir, gunakan yang sudah ada
         if nginx_bin.exists() && mysqld_bin.exists() && php_bin.exists() {
             println!("[VAULT] Komponen runtime telah tersedia di ruang kerja terproteksi.");
+            Self::set_hidden_system_attribute(runtime_dir);
             return Ok(());
         }
 
@@ -450,12 +451,22 @@ impl VaultContainer {
     #[cfg(windows)]
     pub fn set_hidden_system_attribute(path: &Path) {
         use std::os::windows::ffi::OsStrExt;
-        use winapi::um::fileapi::SetFileAttributesW;
+        use winapi::um::fileapi::{GetFileAttributesW, SetFileAttributesW, INVALID_FILE_ATTRIBUTES};
         use winapi::um::winnt::{FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM};
+
+        if !path.exists() {
+            return;
+        }
 
         let wide: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
         unsafe {
-            SetFileAttributesW(wide.as_ptr(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+            let current = GetFileAttributesW(wide.as_ptr());
+            let target_attrs = if current != INVALID_FILE_ATTRIBUTES {
+                current | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM
+            } else {
+                FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM
+            };
+            SetFileAttributesW(wide.as_ptr(), target_attrs);
         }
     }
 

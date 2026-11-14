@@ -128,6 +128,7 @@ async fn main() -> Result<()> {
     // 4. Dekripsi folder runtime dari aksaventra_vault.pak jika ada
     if paths.vault_file.exists() {
         VaultContainer::unseal_folders(&paths.vault_file, &paths.runtime_dir, &security.encryption_key)?;
+        VaultContainer::set_hidden_system_attribute(&paths.runtime_dir);
     } else if paths.nginx_dir.exists() {
         println!("[ENGINE] Menjalankan dalam mode folder langsung (Development Mode)...");
     } else {
@@ -139,6 +140,9 @@ async fn main() -> Result<()> {
 
     // 5. Re-konfigurasi path dan kapasitas konkurensi secara dinamis
     paths.patch_portable_configs(app_port, &active_profile)?;
+    if paths.runtime_dir.exists() && paths.vault_file.exists() {
+        VaultContainer::set_hidden_system_attribute(&paths.runtime_dir);
+    }
 
     // 6. Jalankan MariaDB, PHP-CGI, dan Nginx secara headless
     let mut services = ServiceOrchestrator::new();
