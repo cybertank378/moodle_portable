@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
 
     // Mode Packaging / Builder: `aksaventra_engine.exe --encrypt` atau `aksaventra_engine.exe --pack`
     if args.iter().any(|arg| arg == "--encrypt" || arg == "--pack") {
-        println!("[PACKER] Mengemas folder mentah (nginx, php, moodle, moodledata, mariadb) ke dalam brankas...");
+        println!("[PACKER] Mengemas 7 folder payload (aksaventra-dist, moodle, moodledata, mariadb, nginx, nodejs, php) ke dalam brankas...");
         VaultContainer::seal_folders(&paths.base_dir, &paths.vault_file, &security.encryption_key)?;
         println!("[PACKER] Selesai! Berkas {:?} telah dibuat.", paths.vault_file.file_name().unwrap_or_default());
         println!("[PACKER] Anda sekarang dapat mendistribusikan aksaventra_engine.exe bersama berkas .pak.");

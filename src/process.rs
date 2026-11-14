@@ -252,6 +252,37 @@ impl ServiceOrchestrator {
 
         println!("[ENGINE] Menyalakan Next.js CBT Server (Port {})...", NEXTJS_PORT);
 
+        // 1. Pastikan database aksaventra_cbt tersedia di MariaDB
+        let mysql_bin = paths.mariadb_dir.join("bin").join("mysql.exe");
+        if mysql_bin.exists() {
+            let _ = Command::new(&mysql_bin)
+                .args([
+                    "-h", "127.0.0.1",
+                    "-P", &DB_PORT.to_string(),
+                    "-u", "root",
+                    "-e", "CREATE DATABASE IF NOT EXISTS aksaventra_cbt CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+                ])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+
+        // 2. Jalankan npx prisma migrate dev --name "init" sebelum server.js
+        let npx_cmd = paths.nodejs_dir.join("npx.cmd");
+        if npx_cmd.exists() {
+            println!("[ENGINE] Sinkronisasi skema database Prisma CBT...");
+            let mut mig_cmd = Command::new(&npx_cmd);
+            mig_cmd.current_dir(dashboard_dir)
+                .args(["prisma", "migrate", "dev", "--name", "init"])
+                .env("PORT", NEXTJS_PORT.to_string())
+                .env("PATH", Self::portable_path_env(paths))
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            let _ = mig_cmd.status();
+        }
+
         let next_cli = dashboard_dir.join("node_modules").join("next").join("dist").join("bin").join("next");
         let server_js = dashboard_dir.join("server.js");
 

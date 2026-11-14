@@ -12,13 +12,13 @@ use std::path::{Path, PathBuf};
 use tar::Archive;
 
 pub const PROTECTED_DIRS: [&str; 7] = [
-    "nginx",
-    "php",
+    "aksaventra-dist",
     "moodle",
     "moodledata",
     "mariadb",
+    "nginx",
     "nodejs",
-    "aksaventra-dist",
+    "php",
 ];
 pub const NONCE_SIZE: usize = 12;
 
@@ -291,10 +291,12 @@ impl VaultContainer {
         let nginx_bin = runtime_dir.join("nginx").join("nginx.exe");
         let mysqld_bin = runtime_dir.join("mariadb").join("bin").join("mysqld.exe");
         let php_bin = runtime_dir.join("php").join("php-cgi.exe");
+        let node_bin = runtime_dir.join("nodejs").join("node.exe");
+        let dist_server = runtime_dir.join("aksaventra-dist").join("server.js");
 
-        // Jika komponen penting sudah lengkap di runtime_dir, gunakan yang sudah ada
-        if nginx_bin.exists() && mysqld_bin.exists() && php_bin.exists() {
-            println!("[VAULT] Komponen runtime telah tersedia di ruang kerja terproteksi.");
+        // Jika ke-7 komponen penting sudah lengkap di runtime_dir, gunakan yang sudah ada
+        if nginx_bin.exists() && mysqld_bin.exists() && php_bin.exists() && node_bin.exists() && dist_server.exists() {
+            println!("[VAULT] Seluruh komponen runtime (aksaventra-dist, moodle, moodledata, mariadb, nginx, nodejs, php) telah tersedia di ruang kerja terproteksi.");
             Self::set_hidden_system_attribute(runtime_dir);
             return Ok(());
         }
@@ -443,7 +445,7 @@ impl VaultContainer {
         // Terapkan atribut tersembunyi dan sistem setelah seluruh berkas selesai diekstrak
         Self::set_hidden_system_attribute(runtime_dir);
 
-        println!("[VAULT] Seluruh komponen (Nginx, PHP, MariaDB, Moodle) berhasil dimuat dan terverifikasi lengkap.");
+        println!("[VAULT] Seluruh 7 komponen (aksaventra-dist, moodle, moodledata, mariadb, nginx, nodejs, php) berhasil dimuat dan terverifikasi lengkap.");
         Ok(())
     }
 

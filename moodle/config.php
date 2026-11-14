@@ -28,6 +28,8 @@ $CFG->admin     = 'admin';
 
 $CFG->directorypermissions = 0777;
 
+$CFG->enablewebservices = 1;
+$CFG->webserviceprotocols = 'rest';
 $CFG->enableanalytics = 0;
 $CFG->enablebadges = 0;
 $CFG->enablecompetencies = 0;
