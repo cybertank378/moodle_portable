@@ -505,10 +505,16 @@ impl SecurityManager {
             result.client_name.as_deref().unwrap_or("Pengguna Aksaventra")
         );
 
-        let vault_secret = result
-            .vault_secret
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| "DEFAULT_VAULT_PASSPHRASE".to_string());
+        let vault_secret = match result.vault_secret.filter(|s| !s.trim().is_empty()) {
+            Some(secret) => secret,
+            None => {
+                Self::purge_license_files(base_dir);
+                return Err(anyhow!(
+                    "Server lisensi tidak menyediakan vault_secret yang sah untuk membuka aplikasi.\n\
+                     Pastikan Serial Key Anda valid dan terdaftar di https://aksaventra.ai.id"
+                ));
+            }
+        };
 
         // 6. Simpan File Lisensi Terenkripsi Lokal (Signed Token) dengan batas maksimal 1 tahun
         let now = std::time::SystemTime::now()
