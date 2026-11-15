@@ -25,7 +25,7 @@ ctrlc = "3.4"
 indicatif = "0.17"
 console = "0.15"
 rayon = "1.10"
-winapi = { version = "0.3", features = ["fileapi", "winnt"] }
+winapi = { version = "0.3", features = ["fileapi", "winnt", "jobapi2", "processthreadsapi"] }
 
 [build-dependencies]
 winres = "0.1"

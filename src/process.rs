@@ -272,21 +272,6 @@ impl ServiceOrchestrator {
                 .status();
         }
 
-        // 2. Jalankan npx prisma migrate dev --name "init" sebelum server.js
-        let npx_cmd = paths.nodejs_dir.join("npx.cmd");
-        if npx_cmd.exists() {
-            println!("[ENGINE] Sinkronisasi skema database Prisma CBT...");
-            let mut mig_cmd = Command::new(&npx_cmd);
-            mig_cmd.current_dir(dashboard_dir)
-                .args(["prisma", "migrate", "dev", "--name", "init"])
-                .env("PORT", NEXTJS_PORT.to_string())
-                .env("PATH", Self::portable_path_env(paths))
-                .creation_flags(CREATE_NO_WINDOW)
-                .stdout(Stdio::null())
-                .stderr(Stdio::null());
-            let _ = mig_cmd.status();
-        }
-
         let next_cli = dashboard_dir.join("node_modules").join("next").join("dist").join("bin").join("next");
         let server_js = dashboard_dir.join("server.js");
 
@@ -330,7 +315,7 @@ impl ServiceOrchestrator {
     pub fn stop_all(&mut self, paths: &PortablePaths) {
         println!("\n[ENGINE] Menghentikan seluruh proses layanan background...");
 
-        // 1. Hentikan Nginx secara halus (nginx -s stop)
+        // 1. Hentikan Nginx secara halus (nginx -s stop) lalu force-kill process tree-nya
         let nginx_bin = paths.nginx_dir.join("nginx.exe");
         if nginx_bin.exists() {
             let nginx_posix = PortablePaths::to_posix_path(&paths.nginx_dir);
@@ -341,39 +326,53 @@ impl ServiceOrchestrator {
                 .status();
         }
 
-        if let Some(mut child) = self.nginx_proc.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+        if let Some(child) = self.nginx_proc.take() {
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &child.id().to_string()])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
         }
         println!("  [OK] Nginx Web Server dihentikan.");
 
-        // 2. Matikan proses PHP-CGI
-        if let Some(mut child) = self.php_proc.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+        // 2. Matikan proses PHP-CGI beserta seluruh 16/32 worker processes (kill tree)
+        if let Some(child) = self.php_proc.take() {
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &child.id().to_string()])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
         }
         println!("  [OK] PHP FastCGI Daemon dihentikan.");
 
-        // Hentikan Aksaventra CBT Server
-        if let Some(mut child) = self.nextjs_proc.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+        // 3. Hentikan Aksaventra CBT Server (Node.js) beserta child processes-nya
+        if let Some(child) = self.nextjs_proc.take() {
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &child.id().to_string()])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
         }
         println!("  [OK] Aksaventra CBT Server dihentikan.");
 
-        // 3. Hentikan MariaDB secara bersih via mysqladmin shutdown agar tabel tidak korup
+        // 4. Hentikan MariaDB secara bersih via mysqladmin shutdown agar tabel tidak korup
         let mysqladmin_bin = paths.mariadb_dir.join("bin").join("mysqladmin.exe");
         if mysqladmin_bin.exists() {
             let _ = Command::new(&mysqladmin_bin)
-                .args(["-u", "root", "shutdown"])
+                .args(["-u", "root", "-P", &DB_PORT.to_string(), "shutdown"])
                 .creation_flags(CREATE_NO_WINDOW)
                 .status();
         }
 
-        if let Some(mut child) = self.mariadb_proc.take() {
-            let _ = child.wait();
+        std::thread::sleep(Duration::from_millis(600));
+
+        if let Some(child) = self.mariadb_proc.take() {
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &child.id().to_string()])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
         }
         println!("  [OK] MariaDB Database Server dihentikan dengan aman.");
+
+        // 5. Sweep kill: pastikan tidak ada proses residu php-cgi atau nginx yang tertinggal
+        Self::kill_lingering_daemons();
     }
 
     /// Membuka peramban (browser) default sistem secara otomatis ke URL aplikasi
@@ -559,10 +558,53 @@ impl ServiceOrchestrator {
 
     /// Memastikan tidak ada daemon server yang menggantung di latar belakang
     pub fn kill_lingering_daemons() {
-        let _ = Command::new("taskkill")
-            .args(["/F", "/IM", "nginx.exe", "/IM", "php-cgi.exe", "/T"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status();
+        #[cfg(windows)]
+        {
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "php-cgi.exe", "/T"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "nginx.exe", "/T"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+    }
+
+    /// Menghubungkan engine ke Windows Job Object dengan limit KILL_ON_JOB_CLOSE.
+    /// Hal ini menjamin bahwa jika console ditutup (klik tombol [X], Ctrl+C, atau force kill),
+    /// OS Windows akan secara otomatis dan instan mematikan seluruh proses anak (executor)
+    /// seperti mysqld.exe, php-cgi.exe, nginx.exe, dan node.exe tanpa ada yang tertinggal/stuck.
+    #[cfg(windows)]
+    pub fn enable_kill_on_job_close() {
+        use winapi::um::jobapi2::{CreateJobObjectW, SetInformationJobObject, AssignProcessToJobObject};
+        use winapi::um::winnt::{
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JobObjectExtendedLimitInformation,
+        };
+        use winapi::um::processthreadsapi::GetCurrentProcess;
+        use std::mem::size_of;
+        use std::ptr::null_mut;
+
+        unsafe {
+            let job = CreateJobObjectW(null_mut(), null_mut());
+            if !job.is_null() {
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                let _ = SetInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    &mut info as *mut _ as *mut _,
+                    size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                );
+                let _ = AssignProcessToJobObject(job, GetCurrentProcess());
+                let _ = job;
+            }
+        }
     }
 }
 

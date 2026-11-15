@@ -36,6 +36,12 @@ fn print_help() {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    #[cfg(windows)]
+    process::ServiceOrchestrator::enable_kill_on_job_close();
+
+    // Pastikan tidak ada executor atau proses residu dari sesi sebelumnya yang menggantung
+    process::ServiceOrchestrator::kill_lingering_daemons();
+
     let args: Vec<String> = env::args().collect();
 
     if args.iter().any(|arg| arg == "-h" || arg == "--help") {
