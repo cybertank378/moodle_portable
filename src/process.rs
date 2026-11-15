@@ -561,6 +561,12 @@ impl ServiceOrchestrator {
         #[cfg(windows)]
         {
             let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "node.exe", "/T"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            let _ = Command::new("taskkill")
                 .args(["/F", "/IM", "php-cgi.exe", "/T"])
                 .creation_flags(CREATE_NO_WINDOW)
                 .stdout(Stdio::null())
@@ -568,6 +574,24 @@ impl ServiceOrchestrator {
                 .status();
             let _ = Command::new("taskkill")
                 .args(["/F", "/IM", "nginx.exe", "/T"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "mariadb.exe", "/T"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "mysql.exe", "/T"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "mysqld.exe", "/T"])
                 .creation_flags(CREATE_NO_WINDOW)
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
