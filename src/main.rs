@@ -172,12 +172,26 @@ async fn main() -> Result<()> {
     println!("======================================================");
 
     if !args.iter().any(|arg| arg == "--skip-browser") {
-        let target_url = if active_ip != "127.0.0.1" {
+        let moodle_target_url = if active_ip != "127.0.0.1" {
             &lan_url
         } else {
             &local_url
         };
-        let _ = ServiceOrchestrator::open_browser(target_url);
+        let cbt_target_url = if active_ip != "127.0.0.1" {
+            &next_lan_url
+        } else {
+            &next_local_url
+        };
+
+        if services.is_nextjs_running() {
+            println!("[ENGINE] Meluncurkan peramban untuk Aksaventra CBT Dashboard & Moodle LMS...");
+            let _ = ServiceOrchestrator::open_browser(moodle_target_url);
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let _ = ServiceOrchestrator::open_browser(cbt_target_url);
+        } else {
+            println!("[ENGINE] Meluncurkan peramban untuk Moodle LMS...");
+            let _ = ServiceOrchestrator::open_browser(moodle_target_url);
+        }
     }
 
     // 7. Penanganan sinyal keluar aplikasi (Ctrl+C Graceful Shutdown & Re-encryption)

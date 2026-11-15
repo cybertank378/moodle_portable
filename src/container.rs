@@ -213,7 +213,8 @@ impl VaultContainer {
             let mut enc = zstd::Encoder::new(&mut tar_data, 1)?;
             let threads = std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(4);
             let _ = enc.multithread(threads);
-            let mut tar = tar::Builder::new(enc.auto_finish());
+            let buf_writer = std::io::BufWriter::with_capacity(2 * 1024 * 1024, enc.auto_finish());
+            let mut tar = tar::Builder::new(buf_writer);
 
             // Tambahkan entri metadata awal agar saat unseal jumlah file diketahui secara presisi
             let meta_str = format!("total_files={}\n", total_files_to_pack);
@@ -230,7 +231,8 @@ impl VaultContainer {
                     total_files += count;
                 }
             }
-            tar.finish()?;
+            let mut writer = tar.into_inner()?;
+            writer.flush()?;
         }
         pb.finish_with_message(format!("Selesai mengarsipkan {} berkas ke memori.", total_files));
 
@@ -326,7 +328,7 @@ impl VaultContainer {
 
         println!("[VAULT] Mengekstrak seluruh berkas ke ruang kerja terproteksi (Multi-Threaded)...");
         let decoder = zstd::Decoder::new(&decrypted_zstd[..])?;
-        let buf_decoder = std::io::BufReader::with_capacity(4 * 1024 * 1024, decoder);
+        let buf_decoder = std::io::BufReader::with_capacity(8 * 1024 * 1024, decoder);
         let mut archive = Archive::new(buf_decoder);
         archive.set_preserve_permissions(false);
         archive.set_preserve_mtime(false);

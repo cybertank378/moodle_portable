@@ -29,6 +29,10 @@ impl ServiceOrchestrator {
         }
     }
 
+    pub fn is_nextjs_running(&self) -> bool {
+        self.nextjs_proc.is_some()
+    }
+
     /// Helper untuk membuat environment PATH terisolasi khusus direktori portabel
     pub fn portable_path_env(paths: &PortablePaths) -> String {
         let node_dir = &paths.nodejs_dir;
