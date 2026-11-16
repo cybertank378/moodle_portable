@@ -59,6 +59,7 @@ class manage_groups extends external_api {
                 return [
                     'success' => $res['success'],
                     'message' => $res['message'],
+                    'record_id' => (int)($res['class_id'] ?? 0),
                     'classes' => [],
                     'students' => [],
                 ];
@@ -68,8 +69,19 @@ class manage_groups extends external_api {
                 return [
                     'success' => $res['success'],
                     'message' => $res['message'],
+                    'record_id' => (int)($res['user_id'] ?? 0),
                     'classes' => [],
                     'students' => [],
+                ];
+
+            case 'list_students':
+                $students = $usecase->list_all_students();
+                return [
+                    'success' => true,
+                    'message' => 'All students retrieved successfully',
+                    'record_id' => 0,
+                    'classes' => [],
+                    'students' => $students,
                 ];
 
             case 'get_class_students':
@@ -78,6 +90,7 @@ class manage_groups extends external_api {
                 return [
                     'success' => true,
                     'message' => 'Students retrieved successfully',
+                    'record_id' => 0,
                     'classes' => [],
                     'students' => $students,
                 ];
@@ -88,6 +101,7 @@ class manage_groups extends external_api {
                 return [
                     'success' => true,
                     'message' => 'Classes retrieved successfully',
+                    'record_id' => 0,
                     'classes' => $classes,
                     'students' => [],
                 ];
@@ -98,6 +112,7 @@ class manage_groups extends external_api {
         return new external_single_structure([
             'success' => new external_value(PARAM_BOOL, 'Status'),
             'message' => new external_value(PARAM_TEXT, 'Message'),
+            'record_id' => new external_value(PARAM_INT, 'Created/updated Moodle record ID', VALUE_OPTIONAL, 0),
             'classes' => new external_multiple_structure(
                 new external_single_structure([
                     'id' => new external_value(PARAM_INT, 'Class ID'),
@@ -113,6 +128,8 @@ class manage_groups extends external_api {
                     'username' => new external_value(PARAM_TEXT, 'Username'),
                     'full_name' => new external_value(PARAM_TEXT, 'Full name'),
                     'email' => new external_value(PARAM_TEXT, 'Email'),
+                    'class_id' => new external_value(PARAM_INT, 'Class ID', VALUE_OPTIONAL, 0),
+                    'class_name' => new external_value(PARAM_TEXT, 'Class name', VALUE_OPTIONAL, ''),
                 ])
             ),
         ]);

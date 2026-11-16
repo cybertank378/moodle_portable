@@ -5,6 +5,8 @@ use std::fs;
 use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 pub const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -17,6 +19,7 @@ pub struct ServiceOrchestrator {
     php_proc: Option<Child>,
     nginx_proc: Option<Child>,
     nextjs_proc: Option<Child>,
+    cron_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl ServiceOrchestrator {
@@ -26,7 +29,12 @@ impl ServiceOrchestrator {
             php_proc: None,
             nginx_proc: None,
             nextjs_proc: None,
+            cron_handle: None,
         }
+    }
+
+    pub fn is_nextjs_running(&self) -> bool {
+        self.nextjs_proc.is_some()
     }
 
     /// Helper untuk membuat environment PATH terisolasi khusus direktori portabel
@@ -240,17 +248,33 @@ impl ServiceOrchestrator {
     pub fn start_nextjs(&mut self, paths: &PortablePaths) -> Result<()> {
         let node_bin = paths.nodejs_dir.join("node.exe");
         if !node_bin.exists() {
-            println!("  [INFO] Runtime Node.js portabel tidak ditemukan di {:?}, melewati Next.js.", paths.nodejs_dir);
+            println!("  [INFO] Runtime Node.js portabel tidak ditemukan di {:?}, melewati Aksaventra CBT.", paths.nodejs_dir);
             return Ok(());
         }
 
         let dashboard_dir = &paths.dashboard_dir;
         if !dashboard_dir.exists() {
-            println!("  [INFO] Direktori Next.js/Dashboard tidak ditemukan di {:?}, melewati Next.js.", dashboard_dir);
+            println!("  [INFO] Direktori Aksaventra Dashboard tidak ditemukan di {:?}, melewati Aksaventra CBT.", dashboard_dir);
             return Ok(());
         }
 
-        println!("[ENGINE] Menyalakan Next.js CBT Server (Port {})...", NEXTJS_PORT);
+        println!("[ENGINE] Menyalakan Aksaventra CBT Server (Port {})...", NEXTJS_PORT);
+
+        // 1. Pastikan database aksaventra_cbt tersedia di MariaDB
+        let mysql_bin = paths.mariadb_dir.join("bin").join("mysql.exe");
+        if mysql_bin.exists() {
+            let _ = Command::new(&mysql_bin)
+                .args([
+                    "-h", "127.0.0.1",
+                    "-P", &DB_PORT.to_string(),
+                    "-u", "root",
+                    "-e", "CREATE DATABASE IF NOT EXISTS aksaventra_cbt CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+                ])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
 
         let next_cli = dashboard_dir.join("node_modules").join("next").join("dist").join("bin").join("next");
         let server_js = dashboard_dir.join("server.js");
@@ -276,26 +300,126 @@ impl ServiceOrchestrator {
                 cmd.arg(&next_cli).args(["dev", "-p", &NEXTJS_PORT.to_string()]);
             }
         } else {
-            println!("  [WARN] Modul Next.js CLI tidak ditemukan di {:?}.", dashboard_dir);
+            println!("  [WARN] Modul Aksaventra CLI tidak ditemukan di {:?}.", dashboard_dir);
             return Ok(());
         }
 
-        self.nextjs_proc = Some(cmd.spawn().with_context(|| "Gagal mengeksekusi Next.js server")?);
+        self.nextjs_proc = Some(cmd.spawn().with_context(|| "Gagal mengeksekusi Aksaventra CBT server")?);
 
         if wait_for_port(NEXTJS_PORT, Duration::from_secs(10)) {
-            println!("  [OK] Next.js CBT Server aktif di port {}.", NEXTJS_PORT);
+            println!("  [OK] Aksaventra CBT Server aktif di port {}.", NEXTJS_PORT);
         } else {
-            println!("  [INFO] Next.js CBT Server telah dijalankan di background (port {}).", NEXTJS_PORT);
+            println!("  [INFO] Aksaventra CBT Server telah dijalankan di background (port {}).", NEXTJS_PORT);
         }
 
         Ok(())
+    }
+
+    /// Menjalankan daemon background worker untuk memproses Moodle Cron dan Ad-hoc tasks secara berkala
+    pub fn start_moodle_cron_daemon(
+        &mut self,
+        paths: &PortablePaths,
+        running: Arc<AtomicBool>,
+    ) {
+        let php_exe = paths.php_dir.join("php.exe");
+        let php_ini = paths.php_dir.join("php.ini");
+        let php_dir = paths.php_dir.clone();
+        let moodle_dir = paths.moodle_dir.clone();
+        let path_env = Self::portable_path_env(paths);
+
+        let cron_script = moodle_dir.join("admin").join("cli").join("cron.php");
+        let adhoc_script = moodle_dir.join("admin").join("cli").join("adhoc_task.php");
+
+        if !php_exe.exists() || !cron_script.exists() {
+            return;
+        }
+
+        println!("[ENGINE] Menyalakan Daemon Background Cron & Ad-hoc Moodle (Interval: 60s)...");
+
+        let r = running;
+        let handle = std::thread::Builder::new()
+            .name("moodle-cron-worker".to_string())
+            .spawn(move || {
+                let mut counter: u32 = 0;
+                while r.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_secs(1));
+                    if !r.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    counter += 1;
+                    if counter >= 60 {
+                        counter = 0;
+
+                        // 1. Eksekusi admin/cli/cron.php
+                        let _ = Command::new(&php_exe)
+                            .current_dir(&moodle_dir)
+                            .env("PHPRC", &php_dir)
+                            .env("PATH", &path_env)
+                            .arg("-c")
+                            .arg(&php_ini)
+                            .arg("admin/cli/cron.php")
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .creation_flags(CREATE_NO_WINDOW)
+                            .status();
+
+                        // 2. Eksekusi admin/cli/adhoc_task.php --execute --force untuk memproses task antrean cepat
+                        if adhoc_script.exists() {
+                            let _ = Command::new(&php_exe)
+                                .current_dir(&moodle_dir)
+                                .env("PHPRC", &php_dir)
+                                .env("PATH", &path_env)
+                                .arg("-c")
+                                .arg(&php_ini)
+                                .arg("admin/cli/adhoc_task.php")
+                                .arg("--execute")
+                                .arg("--force")
+                                .stdout(Stdio::null())
+                                .stderr(Stdio::null())
+                                .creation_flags(CREATE_NO_WINDOW)
+                                .status();
+                        }
+
+                        // 3. Eksekusi mod/cbt/cli/sync.php untuk auto-sync data master berkala
+                        let sync_script = moodle_dir.join("mod").join("cbt").join("cli").join("sync.php");
+                        if sync_script.exists() {
+                            let _ = Command::new(&php_exe)
+                                .current_dir(&moodle_dir)
+                                .env("PHPRC", &php_dir)
+                                .env("PATH", &path_env)
+                                .arg("-c")
+                                .arg(&php_ini)
+                                .arg("mod/cbt/cli/sync.php")
+                                .stdout(Stdio::null())
+                                .stderr(Stdio::null())
+                                .creation_flags(CREATE_NO_WINDOW)
+                                .status();
+                        }
+                    }
+                }
+            });
+
+        match handle {
+            Ok(h) => {
+                self.cron_handle = Some(h);
+                println!("  [OK] Daemon Background Cron & Ad-hoc Moodle aktif.");
+            }
+            Err(e) => {
+                eprintln!("  [WARN] Gagal memulai daemon cron Moodle: {:?}", e);
+            }
+        }
     }
 
     /// Mematikan seluruh proses layanan background secara bersih (graceful shutdown)
     pub fn stop_all(&mut self, paths: &PortablePaths) {
         println!("\n[ENGINE] Menghentikan seluruh proses layanan background...");
 
-        // 1. Hentikan Nginx secara halus (nginx -s stop)
+        // 0. Hentikan daemon background cron Moodle jika aktif
+        if let Some(handle) = self.cron_handle.take() {
+            let _ = handle.join();
+        }
+
+        // 1. Hentikan Nginx secara halus (nginx -s stop) lalu force-kill process tree-nya
         let nginx_bin = paths.nginx_dir.join("nginx.exe");
         if nginx_bin.exists() {
             let nginx_posix = PortablePaths::to_posix_path(&paths.nginx_dir);
@@ -306,39 +430,53 @@ impl ServiceOrchestrator {
                 .status();
         }
 
-        if let Some(mut child) = self.nginx_proc.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+        if let Some(child) = self.nginx_proc.take() {
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &child.id().to_string()])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
         }
         println!("  [OK] Nginx Web Server dihentikan.");
 
-        // 2. Matikan proses PHP-CGI
-        if let Some(mut child) = self.php_proc.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+        // 2. Matikan proses PHP-CGI beserta seluruh 16/32 worker processes (kill tree)
+        if let Some(child) = self.php_proc.take() {
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &child.id().to_string()])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
         }
         println!("  [OK] PHP FastCGI Daemon dihentikan.");
 
-        // Hentikan Next.js CBT Server
-        if let Some(mut child) = self.nextjs_proc.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+        // 3. Hentikan Aksaventra CBT Server (Node.js) beserta child processes-nya
+        if let Some(child) = self.nextjs_proc.take() {
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &child.id().to_string()])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
         }
-        println!("  [OK] Next.js CBT Server dihentikan.");
+        println!("  [OK] Aksaventra CBT Server dihentikan.");
 
-        // 3. Hentikan MariaDB secara bersih via mysqladmin shutdown agar tabel tidak korup
+        // 4. Hentikan MariaDB secara bersih via mysqladmin shutdown agar tabel tidak korup
         let mysqladmin_bin = paths.mariadb_dir.join("bin").join("mysqladmin.exe");
         if mysqladmin_bin.exists() {
             let _ = Command::new(&mysqladmin_bin)
-                .args(["-u", "root", "shutdown"])
+                .args(["-u", "root", "-P", &DB_PORT.to_string(), "shutdown"])
                 .creation_flags(CREATE_NO_WINDOW)
                 .status();
         }
 
-        if let Some(mut child) = self.mariadb_proc.take() {
-            let _ = child.wait();
+        std::thread::sleep(Duration::from_millis(600));
+
+        if let Some(child) = self.mariadb_proc.take() {
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &child.id().to_string()])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
         }
         println!("  [OK] MariaDB Database Server dihentikan dengan aman.");
+
+        // 5. Sweep kill: pastikan tidak ada proses residu php-cgi atau nginx yang tertinggal
+        Self::kill_lingering_daemons();
     }
 
     /// Membuka peramban (browser) default sistem secara otomatis ke URL aplikasi
@@ -458,6 +596,75 @@ impl ServiceOrchestrator {
             }
         }
 
+        // Eksekusi pemrosesan awal tugas ad-hoc yang tertunda (migrasi bank soal, dll.)
+        let adhoc_script = moodle_dir.join("admin").join("cli").join("adhoc_task.php");
+        if adhoc_script.exists() {
+            let status_adhoc = Command::new(&php_exe)
+                .current_dir(moodle_dir)
+                .env("PHPRC", &paths.php_dir)
+                .env("PATH", Self::portable_path_env(paths))
+                .arg("-c")
+                .arg(&php_ini)
+                .arg("admin/cli/adhoc_task.php")
+                .arg("--execute")
+                .arg("--force")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+
+            if let Ok(s) = status_adhoc {
+                if s.success() {
+                    println!("  [OK] Antrean tugas ad-hoc Moodle berhasil diselaraskan (qbank transfer).");
+                }
+            }
+        }
+
+        // 1. Eksekusi autoconfig mod_cbt untuk memastikan Web Services & Token API aktif
+        let autoconfig_script = moodle_dir.join("mod").join("cbt").join("cli").join("autoconfig.php");
+        if autoconfig_script.exists() {
+            let status_autoconfig = Command::new(&php_exe)
+                .current_dir(moodle_dir)
+                .env("PHPRC", &paths.php_dir)
+                .env("PATH", Self::portable_path_env(paths))
+                .arg("-c")
+                .arg(&php_ini)
+                .arg("mod/cbt/cli/autoconfig.php")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+
+            if let Ok(s) = status_autoconfig {
+                if s.success() {
+                    println!("  [OK] Konfigurasi Web Services mod_cbt & API Token berhasil diselaraskan.");
+                }
+            }
+        }
+
+        // 2. Eksekusi sinkronisasi master data awal (Moodle -> Aksaventra CBT)
+        let sync_script = moodle_dir.join("mod").join("cbt").join("cli").join("sync.php");
+        if sync_script.exists() {
+            println!("[ENGINE] Menyinkronkan data Moodle (Siswa, Kelas, Ujian) ke Aksaventra CBT...");
+            let status_sync = Command::new(&php_exe)
+                .current_dir(moodle_dir)
+                .env("PHPRC", &paths.php_dir)
+                .env("PATH", Self::portable_path_env(paths))
+                .arg("-c")
+                .arg(&php_ini)
+                .arg("mod/cbt/cli/sync.php")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+
+            if let Ok(s) = status_sync {
+                if s.success() {
+                    println!("  [OK] Sinkronisasi master data Moodle <-> Aksaventra CBT selesai.");
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -524,10 +731,77 @@ impl ServiceOrchestrator {
 
     /// Memastikan tidak ada daemon server yang menggantung di latar belakang
     pub fn kill_lingering_daemons() {
-        let _ = Command::new("taskkill")
-            .args(["/F", "/IM", "nginx.exe", "/IM", "php-cgi.exe", "/T"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status();
+        #[cfg(windows)]
+        {
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "node.exe", "/T"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "php-cgi.exe", "/T"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "nginx.exe", "/T"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "mariadb.exe", "/T"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "mysql.exe", "/T"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "mysqld.exe", "/T"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+    }
+
+    /// Menghubungkan engine ke Windows Job Object dengan limit KILL_ON_JOB_CLOSE.
+    /// Hal ini menjamin bahwa jika console ditutup (klik tombol [X], Ctrl+C, atau force kill),
+    /// OS Windows akan secara otomatis dan instan mematikan seluruh proses anak (executor)
+    /// seperti mysqld.exe, php-cgi.exe, nginx.exe, dan node.exe tanpa ada yang tertinggal/stuck.
+    #[cfg(windows)]
+    pub fn enable_kill_on_job_close() {
+        use winapi::um::jobapi2::{CreateJobObjectW, SetInformationJobObject, AssignProcessToJobObject};
+        use winapi::um::winnt::{
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JobObjectExtendedLimitInformation,
+        };
+        use winapi::um::processthreadsapi::GetCurrentProcess;
+        use std::mem::size_of;
+        use std::ptr::null_mut;
+
+        unsafe {
+            let job = CreateJobObjectW(null_mut(), null_mut());
+            if !job.is_null() {
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                let _ = SetInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    &mut info as *mut _ as *mut _,
+                    size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                );
+                let _ = AssignProcessToJobObject(job, GetCurrentProcess());
+                let _ = job;
+            }
+        }
     }
 }
 
@@ -639,6 +913,36 @@ mod tests {
         let paths = PortablePaths::from_base_dir(temp_dir.clone());
         let res = ServiceOrchestrator::optimize_moodle_and_cleanup_plugins(&paths);
         assert!(res.is_ok(), "Harus graceful saat direktori moodle kosong");
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_moodle_cron_daemon_lifecycle() {
+        let temp_dir = std::env::temp_dir().join(format!("aksaventra_cron_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let _ = fs::create_dir_all(&temp_dir);
+        let paths = PortablePaths::from_base_dir(temp_dir.clone());
+        let mut orchestrator = ServiceOrchestrator::new();
+        assert!(orchestrator.cron_handle.is_none());
+
+        let running = Arc::new(AtomicBool::new(true));
+        orchestrator.start_moodle_cron_daemon(&paths, running.clone());
+        // Karena php.exe/cron.php tidak ada di temp_dir, gracefully returns none
+        assert!(orchestrator.cron_handle.is_none());
+
+        // Buat file php.exe dan cron.php tiruan
+        let _ = fs::create_dir_all(&paths.php_dir);
+        let _ = fs::create_dir_all(paths.moodle_dir.join("admin").join("cli"));
+        let _ = fs::write(paths.php_dir.join("php.exe"), b"mock");
+        let _ = fs::write(paths.moodle_dir.join("admin").join("cli").join("cron.php"), b"mock");
+
+        orchestrator.start_moodle_cron_daemon(&paths, running.clone());
+        assert!(orchestrator.cron_handle.is_some());
+
+        // Hentikan worker
+        running.store(false, Ordering::SeqCst);
+        if let Some(h) = orchestrator.cron_handle.take() {
+            let _ = h.join();
+        }
         let _ = fs::remove_dir_all(&temp_dir);
     }
 }

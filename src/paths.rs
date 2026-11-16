@@ -183,6 +183,11 @@ impl PortablePaths {
         // 3a. Tulis virtual host Moodle di sites-enabled/moodle.conf secara dinamis
         // Listen pada seluruh interface (0.0.0.0:{port}) dan server_name _ agar dapat diakses dari IP lokal aktif / Wi-Fi
         let moodle_vhost_path = sites_enabled_dir.join("moodle.conf");
+        let router_fallback = if self.moodle_dir.join("r.php").exists() {
+            "/r.php$is_args$args"
+        } else {
+            "/index.php$is_args$args"
+        };
         let moodle_vhost = format!(
             "server {{\n\
                 listen {port};\n\
@@ -206,7 +211,7 @@ impl PortablePaths {
                 }}\n\
                 \n\
                 location / {{\n\
-                    try_files $uri $uri/ /index.php$is_args$args;\n\
+                    try_files $uri $uri/ {router_fallback};\n\
                 }}\n\
                 \n\
                 location ~ [^/]+\\.php(/|$) {{\n\

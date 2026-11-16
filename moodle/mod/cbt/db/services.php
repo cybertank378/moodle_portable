@@ -109,6 +109,13 @@ $functions = [
         'type'          => 'write',
         'capabilities'  => 'mod/cbt:manage',
     ],
+    'mod_cbt_sync_master' => [
+        'classname'     => 'mod_cbt\\external\\sync_master',
+        'methodname'    => 'execute',
+        'description'   => 'Bidirectional master data sync for courses, cohorts, students, exams, and questions.',
+        'type'          => 'write',
+        'capabilities'  => 'mod/cbt:manage',
+    ],
 ];
 
 $services = [
@@ -126,6 +133,7 @@ $services = [
             'mod_cbt_manage_groups',
             'mod_cbt_assign_group_to_exam',
             'mod_cbt_import_export',
+            'mod_cbt_sync_master',
             'core_webservice_get_site_info',
         ],
         'restrictedusers' => 0,

@@ -22,12 +22,15 @@ $CFG->wwwroot   = !empty($_SERVER['HTTP_HOST']) ? (((isset($_SERVER['HTTPS']) &&
 $CFG->dataroot  = dirname(__DIR__) . '/moodledata';
 $CFG->tempdir   = $CFG->dataroot . '/temp';
 $CFG->cachedir  = $CFG->dataroot . '/cache';
+$CFG->theme     = 'aksaventra';
 $CFG->localcachedir = $CFG->dataroot . '/localcache';
 
 $CFG->admin     = 'admin';
 
 $CFG->directorypermissions = 0777;
 
+$CFG->enablewebservices = 1;
+$CFG->webserviceprotocols = 'rest';
 $CFG->enableanalytics = 0;
 $CFG->enablebadges = 0;
 $CFG->enablecompetencies = 0;

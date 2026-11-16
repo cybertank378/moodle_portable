@@ -73,5 +73,7 @@ $string['settings_default_timelimit'] = 'Default Durasi Ujian (Detik)';
 $string['settings_default_timelimit_desc'] = 'Durasi waktu pengerjaan default ketika membuat sesi ujian baru (contoh: 7200 untuk 120 menit).';
 $string['settings_default_maxstrikes'] = 'Batas Maksimal Pelanggaran Default';
 $string['settings_default_maxstrikes_desc'] = 'Jumlah toleransi pelanggaran (ganti tab, keluar layar penuh) sebelum sesi siswa dikunci secara otomatis.';
+$string['settings_webhook_secret'] = 'Webhook Sync Secret';
+$string['settings_webhook_secret_desc'] = 'Secret key untuk autentikasi webhook sinkronisasi real-time ke Aksaventra CBT (header X-Moodle-Webhook-Secret).';
 
 

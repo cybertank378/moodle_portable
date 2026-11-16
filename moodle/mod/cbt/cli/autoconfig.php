@@ -64,6 +64,7 @@ set_config('webserviceprotocols', 'rest');
 cli_writeln("[2/7] Mengonfigurasi parameter default mod_cbt...");
 set_config('nextjs_url', 'http://localhost:3000/exam', 'mod_cbt');
 set_config('portal_url', 'http://localhost:3000', 'mod_cbt');
+set_config('webhook_secret', 'aksaventra_sync_secret_2026', 'mod_cbt');
 set_config('default_timelimit', 7200, 'mod_cbt');
 set_config('default_maxstrikes', 3, 'mod_cbt');
 
@@ -88,8 +89,8 @@ if (!$service) {
     cli_writeln("  -> Service mod_cbt_service aktif (ID: {$service->id}).");
 }
 
-// 4. Attach all 12 functions to mod_cbt_service
-cli_writeln("[4/7] Mendaftarkan 12 fungsi API headless ke mod_cbt_service...");
+// 4. Attach all 13 functions to mod_cbt_service
+cli_writeln("[4/7] Mendaftarkan 13 fungsi API headless ke mod_cbt_service...");
 $required_functions = [
     'mod_cbt_get_exam_manifest' => 'mod_cbt\external\get_exam_manifest',
     'mod_cbt_sync_batch_answers' => 'mod_cbt\external\sync_batch_answers',
@@ -103,6 +104,7 @@ $required_functions = [
     'mod_cbt_manage_groups' => 'mod_cbt\external\manage_groups',
     'mod_cbt_assign_group_to_exam' => 'mod_cbt\external\assign_group_to_exam',
     'mod_cbt_import_export' => 'mod_cbt\external\import_export',
+    'mod_cbt_sync_master' => 'mod_cbt\external\sync_master',
     'core_webservice_get_site_info' => 'core_webservice_external',
 ];
 
@@ -239,32 +241,38 @@ if ($cbt_count == 0) {
 
 // 7. Synchronize Next.js .env
 cli_writeln("[7/7] Menyinkronkan konfigurasi ke frontend Next.js (aksaventra-cbt)...");
-$nextjs_env_path = 'D:/Project/Website/aksaventra-cbt/.env';
-if (file_exists($nextjs_env_path)) {
-    $env_content = file_get_contents($nextjs_env_path);
-    
-    // Prepare Moodle API environment variables
-    $wwwroot = !empty($CFG->wwwroot) ? $CFG->wwwroot : 'http://localhost:8080';
-    $endpoint = $wwwroot . '/webservice/rest/server.php';
-    $token = $token_record->token;
+$base_dir = dirname(dirname(dirname(__DIR__)));
+$env_targets = [
+    'D:/Project/Website/aksaventra-cbt/.env',
+    $base_dir . '/aksaventra-dist/.env',
+    $base_dir . '/.aksaventra_rt/aksaventra-dist/.env',
+];
 
-    $configs = [
-        'NEXT_PUBLIC_MOODLE_URL' => $wwwroot,
-        'MOODLE_WS_ENDPOINT' => $endpoint,
-        'MOODLE_WS_TOKEN' => $token,
-        'NEXT_PUBLIC_DEFAULT_CBT_ID' => '1',
-    ];
+$wwwroot = !empty($CFG->wwwroot) ? $CFG->wwwroot : 'http://localhost:8080';
+$endpoint = $wwwroot . '/webservice/rest/server.php';
+$token = $token_record->token;
 
-    foreach ($configs as $k => $v) {
-        if (preg_match("/^{$k}=.*$/m", $env_content)) {
-            $env_content = preg_replace("/^{$k}=.*$/m", "{$k}=\"{$v}\"", $env_content);
-        } else {
-            $env_content .= "\n{$k}=\"{$v}\"";
+$configs = [
+    'NEXT_PUBLIC_MOODLE_URL' => $wwwroot,
+    'MOODLE_WS_ENDPOINT' => $endpoint,
+    'MOODLE_WS_TOKEN' => $token,
+    'MOODLE_WEBHOOK_SECRET' => 'aksaventra_sync_secret_2026',
+    'NEXT_PUBLIC_DEFAULT_CBT_ID' => '1',
+];
+
+foreach ($env_targets as $nextjs_env_path) {
+    if (file_exists($nextjs_env_path)) {
+        $env_content = file_get_contents($nextjs_env_path);
+        foreach ($configs as $k => $v) {
+            if (preg_match("/^{$k}=.*$/m", $env_content)) {
+                $env_content = preg_replace("/^{$k}=.*$/m", "{$k}=\"{$v}\"", $env_content);
+            } else {
+                $env_content .= "\n{$k}=\"{$v}\"";
+            }
         }
+        file_put_contents($nextjs_env_path, $env_content);
+        cli_writeln("  -> File {$nextjs_env_path} berhasil diperbarui dengan Token API dan Endpoint!");
     }
-
-    file_put_contents($nextjs_env_path, $env_content);
-    cli_writeln("  -> File {$nextjs_env_path} berhasil diperbarui dengan Token API dan Endpoint!");
 }
 
 cli_heading("KONFIGURASI OTOMATIS SELESAI DENGAN SUKSES!");

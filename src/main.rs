@@ -36,6 +36,12 @@ fn print_help() {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    #[cfg(windows)]
+    process::ServiceOrchestrator::enable_kill_on_job_close();
+
+    // Pastikan tidak ada executor atau proses residu dari sesi sebelumnya yang menggantung
+    process::ServiceOrchestrator::kill_lingering_daemons();
+
     let args: Vec<String> = env::args().collect();
 
     if args.iter().any(|arg| arg == "-h" || arg == "--help") {
@@ -55,7 +61,7 @@ async fn main() -> Result<()> {
 
     // Mode Packaging / Builder: `aksaventra_engine.exe --encrypt` atau `aksaventra_engine.exe --pack`
     if args.iter().any(|arg| arg == "--encrypt" || arg == "--pack") {
-        println!("[PACKER] Mengemas folder mentah (nginx, php, moodle, moodledata, mariadb) ke dalam brankas...");
+        println!("[PACKER] Mengemas 7 folder payload (aksaventra-dist, moodle, moodledata, mariadb, nginx, nodejs, php) ke dalam brankas...");
         VaultContainer::seal_folders(&paths.base_dir, &paths.vault_file, &security.encryption_key)?;
         println!("[PACKER] Selesai! Berkas {:?} telah dibuat.", paths.vault_file.file_name().unwrap_or_default());
         println!("[PACKER] Anda sekarang dapat mendistribusikan aksaventra_engine.exe bersama berkas .pak.");
@@ -157,7 +163,7 @@ async fn main() -> Result<()> {
     println!("======================================================");
     let next_local_url = format!("http://localhost:{}", process::NEXTJS_PORT);
     let next_lan_url = format!("http://{}:{}", active_ip, process::NEXTJS_PORT);
-    println!("  Akses CBT Dashboard (Next.js): {}", next_local_url);
+    println!("  Akses CBT Dashboard (Aksaventra): {}", next_local_url);
     if active_ip != "127.0.0.1" {
         println!("  Akses CBT Jaringan (LAN/Wi-Fi): {}", next_lan_url);
     }
@@ -165,19 +171,33 @@ async fn main() -> Result<()> {
     if active_ip != "127.0.0.1" {
         println!("  Akses Moodle Jaringan        : {}", lan_url);
     }
-    println!("  Status Layanan               : MariaDB ({}), PHP ({} Workers), Nginx, Node.js (Next.js :3000)", active_profile.buffer_pool, active_profile.workers);
+    println!("  Status Layanan               : MariaDB ({}), PHP ({} Workers), Nginx, Node.js (Aksaventra :3000)", active_profile.buffer_pool, active_profile.workers);
     println!("  Profil / Kapasitas CBT      : {} ({})", active_profile.name, active_profile.estimated_cbt_users);
     println!("======================================================");
     println!("  Tekan Ctrl+C untuk menutup dan mengamankan data.     ");
     println!("======================================================");
 
     if !args.iter().any(|arg| arg == "--skip-browser") {
-        let target_url = if active_ip != "127.0.0.1" {
+        let moodle_target_url = if active_ip != "127.0.0.1" {
             &lan_url
         } else {
             &local_url
         };
-        let _ = ServiceOrchestrator::open_browser(target_url);
+        let cbt_target_url = if active_ip != "127.0.0.1" {
+            &next_lan_url
+        } else {
+            &next_local_url
+        };
+
+        if services.is_nextjs_running() {
+            println!("[ENGINE] Meluncurkan peramban untuk Aksaventra CBT Dashboard & Moodle LMS...");
+            let _ = ServiceOrchestrator::open_browser(moodle_target_url);
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let _ = ServiceOrchestrator::open_browser(cbt_target_url);
+        } else {
+            println!("[ENGINE] Meluncurkan peramban untuk Moodle LMS...");
+            let _ = ServiceOrchestrator::open_browser(moodle_target_url);
+        }
     }
 
     // 7. Penanganan sinyal keluar aplikasi (Ctrl+C Graceful Shutdown & Re-encryption)
@@ -187,11 +207,14 @@ async fn main() -> Result<()> {
         r.store(false, Ordering::SeqCst);
     })?;
 
+    // 8. Nyalakan Background Cron & Ad-hoc Task Worker Daemon Moodle
+    services.start_moodle_cron_daemon(&paths, running.clone());
+
     while running.load(Ordering::SeqCst) {
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
-    // 8. Matikan seluruh service & enkripsi kembali seluruh perubahan database/moodledata
+    // 9. Matikan seluruh service & enkripsi kembali seluruh perubahan database/moodledata
     services.stop_all(&paths);
     if paths.vault_file.exists() {
         println!("[VAULT] Mengamankan dan mengenkripsi ulang data runtime...");

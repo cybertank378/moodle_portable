@@ -12,13 +12,13 @@ use std::path::{Path, PathBuf};
 use tar::Archive;
 
 pub const PROTECTED_DIRS: [&str; 7] = [
-    "nginx",
-    "php",
+    "aksaventra-dist",
     "moodle",
     "moodledata",
     "mariadb",
+    "nginx",
     "nodejs",
-    "aksaventra-dist",
+    "php",
 ];
 pub const NONCE_SIZE: usize = 12;
 
@@ -213,7 +213,8 @@ impl VaultContainer {
             let mut enc = zstd::Encoder::new(&mut tar_data, 1)?;
             let threads = std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(4);
             let _ = enc.multithread(threads);
-            let mut tar = tar::Builder::new(enc.auto_finish());
+            let buf_writer = std::io::BufWriter::with_capacity(2 * 1024 * 1024, enc.auto_finish());
+            let mut tar = tar::Builder::new(buf_writer);
 
             // Tambahkan entri metadata awal agar saat unseal jumlah file diketahui secara presisi
             let meta_str = format!("total_files={}\n", total_files_to_pack);
@@ -230,7 +231,8 @@ impl VaultContainer {
                     total_files += count;
                 }
             }
-            tar.finish()?;
+            let mut writer = tar.into_inner()?;
+            writer.flush()?;
         }
         pb.finish_with_message(format!("Selesai mengarsipkan {} berkas ke memori.", total_files));
 
@@ -291,10 +293,12 @@ impl VaultContainer {
         let nginx_bin = runtime_dir.join("nginx").join("nginx.exe");
         let mysqld_bin = runtime_dir.join("mariadb").join("bin").join("mysqld.exe");
         let php_bin = runtime_dir.join("php").join("php-cgi.exe");
+        let node_bin = runtime_dir.join("nodejs").join("node.exe");
+        let dist_server = runtime_dir.join("aksaventra-dist").join("server.js");
 
-        // Jika komponen penting sudah lengkap di runtime_dir, gunakan yang sudah ada
-        if nginx_bin.exists() && mysqld_bin.exists() && php_bin.exists() {
-            println!("[VAULT] Komponen runtime telah tersedia di ruang kerja terproteksi.");
+        // Jika ke-7 komponen penting sudah lengkap di runtime_dir, gunakan yang sudah ada
+        if nginx_bin.exists() && mysqld_bin.exists() && php_bin.exists() && node_bin.exists() && dist_server.exists() {
+            println!("[VAULT] Seluruh komponen runtime (aksaventra-dist, moodle, moodledata, mariadb, nginx, nodejs, php) telah tersedia di ruang kerja terproteksi.");
             Self::set_hidden_system_attribute(runtime_dir);
             return Ok(());
         }
@@ -324,7 +328,7 @@ impl VaultContainer {
 
         println!("[VAULT] Mengekstrak seluruh berkas ke ruang kerja terproteksi (Multi-Threaded)...");
         let decoder = zstd::Decoder::new(&decrypted_zstd[..])?;
-        let buf_decoder = std::io::BufReader::with_capacity(4 * 1024 * 1024, decoder);
+        let buf_decoder = std::io::BufReader::with_capacity(8 * 1024 * 1024, decoder);
         let mut archive = Archive::new(buf_decoder);
         archive.set_preserve_permissions(false);
         archive.set_preserve_mtime(false);
@@ -443,7 +447,7 @@ impl VaultContainer {
         // Terapkan atribut tersembunyi dan sistem setelah seluruh berkas selesai diekstrak
         Self::set_hidden_system_attribute(runtime_dir);
 
-        println!("[VAULT] Seluruh komponen (Nginx, PHP, MariaDB, Moodle) berhasil dimuat dan terverifikasi lengkap.");
+        println!("[VAULT] Seluruh 7 komponen (aksaventra-dist, moodle, moodledata, mariadb, nginx, nodejs, php) berhasil dimuat dan terverifikasi lengkap.");
         Ok(())
     }
 
