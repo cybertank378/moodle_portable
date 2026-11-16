@@ -5,6 +5,8 @@ use std::fs;
 use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 pub const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -17,6 +19,7 @@ pub struct ServiceOrchestrator {
     php_proc: Option<Child>,
     nginx_proc: Option<Child>,
     nextjs_proc: Option<Child>,
+    cron_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl ServiceOrchestrator {
@@ -26,6 +29,7 @@ impl ServiceOrchestrator {
             php_proc: None,
             nginx_proc: None,
             nextjs_proc: None,
+            cron_handle: None,
         }
     }
 
@@ -311,9 +315,93 @@ impl ServiceOrchestrator {
         Ok(())
     }
 
+    /// Menjalankan daemon background worker untuk memproses Moodle Cron dan Ad-hoc tasks secara berkala
+    pub fn start_moodle_cron_daemon(
+        &mut self,
+        paths: &PortablePaths,
+        running: Arc<AtomicBool>,
+    ) {
+        let php_exe = paths.php_dir.join("php.exe");
+        let php_ini = paths.php_dir.join("php.ini");
+        let php_dir = paths.php_dir.clone();
+        let moodle_dir = paths.moodle_dir.clone();
+        let path_env = Self::portable_path_env(paths);
+
+        let cron_script = moodle_dir.join("admin").join("cli").join("cron.php");
+        let adhoc_script = moodle_dir.join("admin").join("cli").join("adhoc_task.php");
+
+        if !php_exe.exists() || !cron_script.exists() {
+            return;
+        }
+
+        println!("[ENGINE] Menyalakan Daemon Background Cron & Ad-hoc Moodle (Interval: 60s)...");
+
+        let r = running;
+        let handle = std::thread::Builder::new()
+            .name("moodle-cron-worker".to_string())
+            .spawn(move || {
+                let mut counter: u32 = 0;
+                while r.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_secs(1));
+                    if !r.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    counter += 1;
+                    if counter >= 60 {
+                        counter = 0;
+
+                        // 1. Eksekusi admin/cli/cron.php
+                        let _ = Command::new(&php_exe)
+                            .current_dir(&moodle_dir)
+                            .env("PHPRC", &php_dir)
+                            .env("PATH", &path_env)
+                            .arg("-c")
+                            .arg(&php_ini)
+                            .arg("admin/cli/cron.php")
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .creation_flags(CREATE_NO_WINDOW)
+                            .status();
+
+                        // 2. Eksekusi admin/cli/adhoc_task.php --execute --force untuk memproses task antrean cepat
+                        if adhoc_script.exists() {
+                            let _ = Command::new(&php_exe)
+                                .current_dir(&moodle_dir)
+                                .env("PHPRC", &php_dir)
+                                .env("PATH", &path_env)
+                                .arg("-c")
+                                .arg(&php_ini)
+                                .arg("admin/cli/adhoc_task.php")
+                                .arg("--execute")
+                                .arg("--force")
+                                .stdout(Stdio::null())
+                                .stderr(Stdio::null())
+                                .creation_flags(CREATE_NO_WINDOW)
+                                .status();
+                        }
+                    }
+                }
+            });
+
+        match handle {
+            Ok(h) => {
+                self.cron_handle = Some(h);
+                println!("  [OK] Daemon Background Cron & Ad-hoc Moodle aktif.");
+            }
+            Err(e) => {
+                eprintln!("  [WARN] Gagal memulai daemon cron Moodle: {:?}", e);
+            }
+        }
+    }
+
     /// Mematikan seluruh proses layanan background secara bersih (graceful shutdown)
     pub fn stop_all(&mut self, paths: &PortablePaths) {
         println!("\n[ENGINE] Menghentikan seluruh proses layanan background...");
+
+        // 0. Hentikan daemon background cron Moodle jika aktif
+        if let Some(handle) = self.cron_handle.take() {
+            let _ = handle.join();
+        }
 
         // 1. Hentikan Nginx secara halus (nginx -s stop) lalu force-kill process tree-nya
         let nginx_bin = paths.nginx_dir.join("nginx.exe");
@@ -488,6 +576,30 @@ impl ServiceOrchestrator {
             if let Ok(s) = status_cache {
                 if s.success() {
                     println!("  [OK] Cache Moodle berhasil dibersihkan (purge_caches).");
+                }
+            }
+        }
+
+        // Eksekusi pemrosesan awal tugas ad-hoc yang tertunda (migrasi bank soal, dll.)
+        let adhoc_script = moodle_dir.join("admin").join("cli").join("adhoc_task.php");
+        if adhoc_script.exists() {
+            let status_adhoc = Command::new(&php_exe)
+                .current_dir(moodle_dir)
+                .env("PHPRC", &paths.php_dir)
+                .env("PATH", Self::portable_path_env(paths))
+                .arg("-c")
+                .arg(&php_ini)
+                .arg("admin/cli/adhoc_task.php")
+                .arg("--execute")
+                .arg("--force")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+
+            if let Ok(s) = status_adhoc {
+                if s.success() {
+                    println!("  [OK] Antrean tugas ad-hoc Moodle berhasil diselaraskan (qbank transfer).");
                 }
             }
         }
@@ -740,6 +852,36 @@ mod tests {
         let paths = PortablePaths::from_base_dir(temp_dir.clone());
         let res = ServiceOrchestrator::optimize_moodle_and_cleanup_plugins(&paths);
         assert!(res.is_ok(), "Harus graceful saat direktori moodle kosong");
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_moodle_cron_daemon_lifecycle() {
+        let temp_dir = std::env::temp_dir().join(format!("aksaventra_cron_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let _ = fs::create_dir_all(&temp_dir);
+        let paths = PortablePaths::from_base_dir(temp_dir.clone());
+        let mut orchestrator = ServiceOrchestrator::new();
+        assert!(orchestrator.cron_handle.is_none());
+
+        let running = Arc::new(AtomicBool::new(true));
+        orchestrator.start_moodle_cron_daemon(&paths, running.clone());
+        // Karena php.exe/cron.php tidak ada di temp_dir, gracefully returns none
+        assert!(orchestrator.cron_handle.is_none());
+
+        // Buat file php.exe dan cron.php tiruan
+        let _ = fs::create_dir_all(&paths.php_dir);
+        let _ = fs::create_dir_all(paths.moodle_dir.join("admin").join("cli"));
+        let _ = fs::write(paths.php_dir.join("php.exe"), b"mock");
+        let _ = fs::write(paths.moodle_dir.join("admin").join("cli").join("cron.php"), b"mock");
+
+        orchestrator.start_moodle_cron_daemon(&paths, running.clone());
+        assert!(orchestrator.cron_handle.is_some());
+
+        // Hentikan worker
+        running.store(false, Ordering::SeqCst);
+        if let Some(h) = orchestrator.cron_handle.take() {
+            let _ = h.join();
+        }
         let _ = fs::remove_dir_all(&temp_dir);
     }
 }

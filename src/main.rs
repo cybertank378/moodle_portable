@@ -207,11 +207,14 @@ async fn main() -> Result<()> {
         r.store(false, Ordering::SeqCst);
     })?;
 
+    // 8. Nyalakan Background Cron & Ad-hoc Task Worker Daemon Moodle
+    services.start_moodle_cron_daemon(&paths, running.clone());
+
     while running.load(Ordering::SeqCst) {
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
-    // 8. Matikan seluruh service & enkripsi kembali seluruh perubahan database/moodledata
+    // 9. Matikan seluruh service & enkripsi kembali seluruh perubahan database/moodledata
     services.stop_all(&paths);
     if paths.vault_file.exists() {
         println!("[VAULT] Mengamankan dan mengenkripsi ulang data runtime...");
