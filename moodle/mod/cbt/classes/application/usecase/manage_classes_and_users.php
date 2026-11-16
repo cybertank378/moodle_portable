@@ -198,17 +198,23 @@ class manage_classes_and_users {
     }
 
     /**
-     * Get all students in a classroom/cohort.
+     * Get all students in a classroom/cohort, or all students if cohortid <= 0.
      *
      * @param int $cohortid
      * @return array
      */
     public function get_students_by_class(int $cohortid): array {
+        if ($cohortid <= 0) {
+            return $this->list_all_students();
+        }
+
         global $DB;
 
-        $sql = "SELECT u.id, u.username, u.firstname, u.lastname, u.email
+        $sql = "SELECT u.id, u.username, u.firstname, u.lastname, u.email,
+                       cm.cohortid AS class_id, c.name AS class_name
                   FROM {cohort_members} cm
                   JOIN {user} u ON u.id = cm.userid
+             LEFT JOIN {cohort} c ON c.id = cm.cohortid
                  WHERE cm.cohortid = :cohortid AND u.deleted = 0
               ORDER BY u.firstname ASC, u.lastname ASC";
 
@@ -221,6 +227,44 @@ class manage_classes_and_users {
                 'username' => $u->username,
                 'full_name' => trim($u->firstname . ' ' . $u->lastname),
                 'email' => $u->email,
+                'class_id' => (int)($u->class_id ?? 0),
+                'class_name' => (string)($u->class_name ?? ''),
+            ];
+        }
+
+        return $list;
+    }
+
+    /**
+     * List all active non-guest Moodle users (with optional cohort membership) for sync.
+     *
+     * @return array
+     */
+    public function list_all_students(): array {
+        global $DB;
+
+        $sql = "SELECT u.id, u.username, u.firstname, u.lastname, u.email,
+                       MIN(cm.cohortid) AS class_id, MIN(c.name) AS class_name
+                  FROM {user} u
+             LEFT JOIN {cohort_members} cm ON cm.userid = u.id
+             LEFT JOIN {cohort} c ON c.id = cm.cohortid AND c.visible = 1
+                 WHERE u.deleted = 0
+                   AND u.suspended = 0
+                   AND u.username <> 'guest'
+              GROUP BY u.id, u.username, u.firstname, u.lastname, u.email
+              ORDER BY u.id ASC";
+
+        $records = $DB->get_records_sql($sql);
+        $list = [];
+
+        foreach ($records as $u) {
+            $list[] = [
+                'user_id' => (int)$u->id,
+                'username' => $u->username,
+                'full_name' => trim($u->firstname . ' ' . $u->lastname),
+                'email' => $u->email ?? '',
+                'class_id' => (int)($u->class_id ?? 0),
+                'class_name' => (string)($u->class_name ?? ''),
             ];
         }
 

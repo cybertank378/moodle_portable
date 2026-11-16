@@ -379,6 +379,22 @@ impl ServiceOrchestrator {
                                 .creation_flags(CREATE_NO_WINDOW)
                                 .status();
                         }
+
+                        // 3. Eksekusi mod/cbt/cli/sync.php untuk auto-sync data master berkala
+                        let sync_script = moodle_dir.join("mod").join("cbt").join("cli").join("sync.php");
+                        if sync_script.exists() {
+                            let _ = Command::new(&php_exe)
+                                .current_dir(&moodle_dir)
+                                .env("PHPRC", &php_dir)
+                                .env("PATH", &path_env)
+                                .arg("-c")
+                                .arg(&php_ini)
+                                .arg("mod/cbt/cli/sync.php")
+                                .stdout(Stdio::null())
+                                .stderr(Stdio::null())
+                                .creation_flags(CREATE_NO_WINDOW)
+                                .status();
+                        }
                     }
                 }
             });
@@ -600,6 +616,51 @@ impl ServiceOrchestrator {
             if let Ok(s) = status_adhoc {
                 if s.success() {
                     println!("  [OK] Antrean tugas ad-hoc Moodle berhasil diselaraskan (qbank transfer).");
+                }
+            }
+        }
+
+        // 1. Eksekusi autoconfig mod_cbt untuk memastikan Web Services & Token API aktif
+        let autoconfig_script = moodle_dir.join("mod").join("cbt").join("cli").join("autoconfig.php");
+        if autoconfig_script.exists() {
+            let status_autoconfig = Command::new(&php_exe)
+                .current_dir(moodle_dir)
+                .env("PHPRC", &paths.php_dir)
+                .env("PATH", Self::portable_path_env(paths))
+                .arg("-c")
+                .arg(&php_ini)
+                .arg("mod/cbt/cli/autoconfig.php")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+
+            if let Ok(s) = status_autoconfig {
+                if s.success() {
+                    println!("  [OK] Konfigurasi Web Services mod_cbt & API Token berhasil diselaraskan.");
+                }
+            }
+        }
+
+        // 2. Eksekusi sinkronisasi master data awal (Moodle -> Aksaventra CBT)
+        let sync_script = moodle_dir.join("mod").join("cbt").join("cli").join("sync.php");
+        if sync_script.exists() {
+            println!("[ENGINE] Menyinkronkan data Moodle (Siswa, Kelas, Ujian) ke Aksaventra CBT...");
+            let status_sync = Command::new(&php_exe)
+                .current_dir(moodle_dir)
+                .env("PHPRC", &paths.php_dir)
+                .env("PATH", Self::portable_path_env(paths))
+                .arg("-c")
+                .arg(&php_ini)
+                .arg("mod/cbt/cli/sync.php")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+
+            if let Ok(s) = status_sync {
+                if s.success() {
+                    println!("  [OK] Sinkronisasi master data Moodle <-> Aksaventra CBT selesai.");
                 }
             }
         }

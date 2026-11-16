@@ -55,6 +55,7 @@ class manage_schedule extends external_api {
             return [
                 'success' => $res['success'],
                 'message' => $res['message'],
+                'cbt_id' => (int)($res['cbt_id'] ?? 0),
                 'schedules' => [],
             ];
         }
@@ -63,6 +64,7 @@ class manage_schedule extends external_api {
         return [
             'success' => true,
             'message' => 'Schedules retrieved successfully',
+            'cbt_id' => 0,
             'schedules' => $schedules,
         ];
     }
@@ -71,6 +73,7 @@ class manage_schedule extends external_api {
         return new external_single_structure([
             'success' => new external_value(PARAM_BOOL, 'Success status'),
             'message' => new external_value(PARAM_TEXT, 'Response message'),
+            'cbt_id' => new external_value(PARAM_INT, 'Saved CBT ID', VALUE_OPTIONAL, 0),
             'schedules' => new external_multiple_structure(
                 new external_single_structure([
                     'id' => new external_value(PARAM_INT, 'CBT ID'),

@@ -60,5 +60,14 @@ if ($ADMIN->fulltree) {
         3,
         PARAM_INT
     ));
+
+    // 5. Real-time Webhook Secret
+    $settings->add(new admin_setting_configtext(
+        'mod_cbt/webhook_secret',
+        get_string('settings_webhook_secret', 'mod_cbt'),
+        get_string('settings_webhook_secret_desc', 'mod_cbt'),
+        'aksaventra_sync_secret_2026',
+        PARAM_RAW_TRIMMED
+    ));
 }
 
