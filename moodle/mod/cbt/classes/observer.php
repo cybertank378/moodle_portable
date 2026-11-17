@@ -27,6 +27,13 @@ defined('MOODLE_INTERNAL') || die();
  */
 class observer {
 
+    /**
+     * Set to true during inbound API writes from Next.js to avoid webhook echo loops.
+     *
+     * @var bool
+     */
+    public static bool $suppress_webhook = false;
+
     public static function on_user_created(\core\event\user_created $event): void {
         self::dispatch('user', 'created', (int)$event->objectid);
     }
@@ -102,7 +109,7 @@ class observer {
      * Dispatch a fast, non-blocking HTTP POST webhook to Aksaventra CBT.
      */
     public static function dispatch(string $entity, string $action, int $objectid, array $extra = []): void {
-        if (defined('PHPUNIT_TEST') && PHPUNIT_TEST) {
+        if (self::$suppress_webhook || (defined('PHPUNIT_TEST') && PHPUNIT_TEST)) {
             return;
         }
 

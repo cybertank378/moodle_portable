@@ -44,6 +44,9 @@ class manage_classes_and_users {
         $email = trim((string)($data['email'] ?? ''));
         $password = (string)($data['password'] ?? '');
         $class_id = isset($data['class_id']) ? (int)$data['class_id'] : 0;
+        $moodle_user_id = isset($data['moodle_user_id']) ? (int)$data['moodle_user_id'] : 0;
+        $replace_cohort = !empty($data['replace_cohort']);
+        $suspended = isset($data['is_active']) ? ($data['is_active'] ? 0 : 1) : null;
 
         if ($username === '' || $firstname === '') {
             throw new \moodle_exception('invalidusernameorname', 'mod_cbt', '', null, 'Username/NIS dan Nama Lengkap wajib diisi.');
@@ -54,9 +57,16 @@ class manage_classes_and_users {
         }
 
         $now = time();
-        $existing = $DB->get_record('user', ['username' => $username, 'mnethostid' => $CFG->mnet_localhost_id]);
+        $existing = null;
+        if ($moodle_user_id > 0) {
+            $existing = $DB->get_record('user', ['id' => $moodle_user_id, 'deleted' => 0]);
+        }
+        if (!$existing) {
+            $existing = $DB->get_record('user', ['username' => $username, 'mnethostid' => $CFG->mnet_localhost_id]);
+        }
 
         if ($existing) {
+            $existing->username = $username;
             $existing->firstname = $firstname;
             if ($lastname !== '') {
                 $existing->lastname = $lastname;
@@ -64,6 +74,9 @@ class manage_classes_and_users {
             $existing->email = $email;
             if ($password !== '') {
                 $existing->password = password_hash($password, PASSWORD_DEFAULT);
+            }
+            if ($suspended !== null) {
+                $existing->suspended = $suspended;
             }
             $existing->timemodified = $now;
             $DB->update_record('user', $existing);
@@ -73,6 +86,7 @@ class manage_classes_and_users {
             $user = new \stdClass();
             $user->auth = 'manual';
             $user->confirmed = 1;
+            $user->suspended = $suspended ?? 0;
             $user->mnethostid = $CFG->mnet_localhost_id;
             $user->username = $username;
             $user->password = password_hash($password !== '' ? $password : $username, PASSWORD_DEFAULT);
@@ -85,6 +99,10 @@ class manage_classes_and_users {
 
             $user_id = (int)$DB->insert_record('user', $user);
             $msg = "Akun siswa {$username} berhasil dibuat.";
+        }
+
+        if ($replace_cohort) {
+            $DB->delete_records('cohort_members', ['userid' => $user_id]);
         }
 
         // If class_id provided, add student to cohort
@@ -100,26 +118,38 @@ class manage_classes_and_users {
     }
 
     /**
-     * Create a new classroom/group (cohort).
+     * Create or update a classroom/group (cohort).
      *
      * @param string $name Class name e.g. "X RPL 1"
      * @param string $code Class code e.g. "X-RPL-1"
      * @param string $description
+     * @param int $moodle_id Optional existing cohort id
      * @return array [ 'success' => bool, 'class_id' => int, 'message' => string ]
      */
-    public function create_class_group(string $name, string $code = '', string $description = ''): array {
+    public function create_class_group(string $name, string $code = '', string $description = '', int $moodle_id = 0): array {
         global $DB;
 
         $name = trim($name);
         $code = trim($code !== '' ? $code : str_replace(' ', '-', strtoupper($name)));
 
-        // Check if cohort exists
-        $existing = $DB->get_record('cohort', ['name' => $name]);
+        $existing = null;
+        if ($moodle_id > 0) {
+            $existing = $DB->get_record('cohort', ['id' => $moodle_id]);
+        }
+        if (!$existing) {
+            $existing = $DB->get_record('cohort', ['name' => $name]);
+        }
+
         if ($existing) {
+            $existing->name = $name;
+            $existing->idnumber = $code;
+            $existing->description = $description;
+            $existing->timemodified = time();
+            $DB->update_record('cohort', $existing);
             return [
                 'success' => true,
                 'class_id' => (int)$existing->id,
-                'message' => "Kelas {$name} sudah ada.",
+                'message' => "Kelas {$name} berhasil diperbarui.",
             ];
         }
 
@@ -144,31 +174,33 @@ class manage_classes_and_users {
     }
 
     /**
-     * List all classrooms/groups with student counts.
+     * List all classrooms/groups with student counts using portable DML queries.
      *
      * @return array
      */
     public function list_classes(): array {
         global $DB;
 
-        $sql = "SELECT c.id, c.name, c.idnumber, c.description,
-                       COUNT(cm.userid) AS student_count
-                  FROM {cohort} c
-             LEFT JOIN {cohort_members} cm ON cm.cohortid = c.id
-                 WHERE c.visible = 1
-              GROUP BY c.id, c.name, c.idnumber, c.description
-              ORDER BY c.name ASC";
+        $records = $DB->get_records('cohort', ['visible' => 1], 'name ASC', 'id, name, idnumber, description');
+        $countrows = $DB->get_records_sql(
+            "SELECT cohortid, COUNT(userid) AS student_count
+               FROM {cohort_members}
+              GROUP BY cohortid"
+        );
 
-        $records = $DB->get_records_sql($sql);
+        $countmap = [];
+        foreach ($countrows as $row) {
+            $countmap[(int)$row->cohortid] = (int)$row->student_count;
+        }
+
         $result = [];
-
         foreach ($records as $r) {
             $result[] = [
                 'id' => (int)$r->id,
                 'name' => $r->name,
                 'code' => $r->idnumber ?? '',
                 'description' => $r->description ?? '',
-                'student_count' => (int)$r->student_count,
+                'student_count' => $countmap[(int)$r->id] ?? 0,
             ];
         }
 
@@ -243,28 +275,43 @@ class manage_classes_and_users {
     public function list_all_students(): array {
         global $DB;
 
-        $sql = "SELECT u.id, u.username, u.firstname, u.lastname, u.email,
-                       MIN(cm.cohortid) AS class_id, MIN(c.name) AS class_name
-                  FROM {user} u
-             LEFT JOIN {cohort_members} cm ON cm.userid = u.id
-             LEFT JOIN {cohort} c ON c.id = cm.cohortid AND c.visible = 1
-                 WHERE u.deleted = 0
-                   AND u.suspended = 0
-                   AND u.username <> 'guest'
-              GROUP BY u.id, u.username, u.firstname, u.lastname, u.email
-              ORDER BY u.id ASC";
+        $records = $DB->get_records_select(
+            'user',
+            "deleted = 0 AND suspended = 0 AND username <> :guest",
+            ['guest' => 'guest'],
+            'id ASC',
+            'id, username, firstname, lastname, email'
+        );
 
-        $records = $DB->get_records_sql($sql);
+        $memberships = $DB->get_records_sql(
+            "SELECT cm.id, cm.userid, cm.cohortid AS class_id, c.name AS class_name
+               FROM {cohort_members} cm
+               JOIN {cohort} c ON c.id = cm.cohortid
+              WHERE c.visible = 1
+              ORDER BY cm.id ASC"
+        );
+
+        $usermap = [];
+        foreach ($memberships as $m) {
+            $uid = (int)$m->userid;
+            if (!isset($usermap[$uid])) {
+                $usermap[$uid] = [
+                    'class_id' => (int)$m->class_id,
+                    'class_name' => (string)$m->class_name,
+                ];
+            }
+        }
+
         $list = [];
-
         foreach ($records as $u) {
+            $uid = (int)$u->id;
             $list[] = [
-                'user_id' => (int)$u->id,
+                'user_id' => $uid,
                 'username' => $u->username,
                 'full_name' => trim($u->firstname . ' ' . $u->lastname),
                 'email' => $u->email ?? '',
-                'class_id' => (int)($u->class_id ?? 0),
-                'class_name' => (string)($u->class_name ?? ''),
+                'class_id' => $usermap[$uid]['class_id'] ?? 0,
+                'class_name' => $usermap[$uid]['class_name'] ?? '',
             ];
         }
 

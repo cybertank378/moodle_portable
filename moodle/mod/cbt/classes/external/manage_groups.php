@@ -55,7 +55,8 @@ class manage_groups extends external_api {
                 $name = (string)($data['name'] ?? '');
                 $code = (string)($data['code'] ?? '');
                 $desc = (string)($data['description'] ?? '');
-                $res = $usecase->create_class_group($name, $code, $desc);
+                $moodle_id = (int)($data['moodle_id'] ?? 0);
+                $res = $usecase->create_class_group($name, $code, $desc, $moodle_id);
                 return [
                     'success' => $res['success'],
                     'message' => $res['message'],

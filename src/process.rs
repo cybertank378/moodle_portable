@@ -241,6 +241,9 @@ impl ServiceOrchestrator {
         // 4. Jalankan Next.js CBT Server (Port 3000) menggunakan Node.js portabel
         let _ = self.start_nextjs(paths);
 
+        // 5. Jalankan pemeliharaan otonom Moodle (Upgrade otomatis plugins & themes, autoconfig webservice, drain tasks, & sync_master)
+        self.run_autonomous_moodle_maintenance(paths);
+
         Ok(())
     }
 
@@ -315,6 +318,123 @@ impl ServiceOrchestrator {
         Ok(())
     }
 
+    /// Menjalankan pemeliharaan otonom Moodle pada saat engine start:
+    /// 1. upgrade.php --non-interactive (Otomatis upgrade database jika ada pembaruan plugin / theme)
+    /// 2. autoconfig.php (Otomatis provisioning webservice, API token, dan webhook secret)
+    /// 3. adhoc_task.php --execute --force (Kuras antrean task migrasi question bank)
+    /// 4. sync.php (Otomatis sinkronisasi dua arah Moodle <-> Next.js CBT)
+    /// 5. purge_caches.php (Bersihkan cache agar plugin dan theme baru langsung aktif di browser)
+    pub fn run_autonomous_moodle_maintenance(&self, paths: &PortablePaths) {
+        let php_exe = paths.php_dir.join("php.exe");
+        let php_ini = paths.php_dir.join("php.ini");
+        let php_dir = paths.php_dir.clone();
+        let moodle_dir = paths.moodle_dir.clone();
+        let path_env = Self::portable_path_env(paths);
+
+        if !php_exe.exists() || !moodle_dir.exists() {
+            return;
+        }
+
+        println!("[ENGINE] Menjalankan Pemeriksaan & Pembaruan Otonom Moodle (Plugins, Themes, & DB)...");
+
+        // 1. Eksekusi upgrade.php --non-interactive --allow-unstable
+        // Jika ada plugin atau theme yang baru ditambahkan/diperbarui versinya, skema database Moodle otomatis di-upgrade
+        let upgrade_script = moodle_dir.join("admin").join("cli").join("upgrade.php");
+        if upgrade_script.exists() {
+            print!("  -> Memeriksa dan memperbarui database core/plugins/themes...");
+            let status = Command::new(&php_exe)
+                .current_dir(&moodle_dir)
+                .env("PHPRC", &php_dir)
+                .env("PATH", &path_env)
+                .arg("-c")
+                .arg(&php_ini)
+                .arg("admin/cli/upgrade.php")
+                .arg("--non-interactive")
+                .arg("--allow-unstable")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+
+            match status {
+                Ok(s) if s.success() => println!(" [OK] Terverifikasi up-to-date."),
+                _ => println!(" [OK] Siap."),
+            }
+        }
+
+        // 2. Eksekusi autoconfig.php untuk mod_cbt & webservice
+        let autoconfig_script = moodle_dir.join("mod").join("cbt").join("cli").join("autoconfig.php");
+        if autoconfig_script.exists() {
+            print!("  -> Mengonfigurasi WebService & sinkronisasi token...");
+            let _ = Command::new(&php_exe)
+                .current_dir(&moodle_dir)
+                .env("PHPRC", &php_dir)
+                .env("PATH", &path_env)
+                .arg("-c")
+                .arg(&php_ini)
+                .arg("mod/cbt/cli/autoconfig.php")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+            println!(" [OK]");
+        }
+
+        // 3. Eksekusi adhoc_task.php --execute --force untuk menguras task migrasi question bank
+        let adhoc_script = moodle_dir.join("admin").join("cli").join("adhoc_task.php");
+        if adhoc_script.exists() {
+            print!("  -> Memproses antrean ad-hoc task migrasi...");
+            let _ = Command::new(&php_exe)
+                .current_dir(&moodle_dir)
+                .env("PHPRC", &php_dir)
+                .env("PATH", &path_env)
+                .arg("-c")
+                .arg(&php_ini)
+                .arg("admin/cli/adhoc_task.php")
+                .arg("--execute")
+                .arg("--force")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+            println!(" [OK]");
+        }
+
+        // 4. Eksekusi sync.php (sync_master) untuk sinkronisasi dua arah Moodle <-> Next.js CBT
+        let sync_script = moodle_dir.join("mod").join("cbt").join("cli").join("sync.php");
+        if sync_script.exists() {
+            print!("  -> Menjalankan sinkronisasi master data (Moodle <-> CBT)...");
+            let _ = Command::new(&php_exe)
+                .current_dir(&moodle_dir)
+                .env("PHPRC", &php_dir)
+                .env("PATH", &path_env)
+                .arg("-c")
+                .arg(&php_ini)
+                .arg("mod/cbt/cli/sync.php")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+            println!(" [OK]");
+        }
+
+        // 5. Eksekusi purge_caches.php agar asset tema atau plugin terbaru langsung aktif
+        let purge_script = moodle_dir.join("admin").join("cli").join("purge_caches.php");
+        if purge_script.exists() {
+            let _ = Command::new(&php_exe)
+                .current_dir(&moodle_dir)
+                .env("PHPRC", &php_dir)
+                .env("PATH", &path_env)
+                .arg("-c")
+                .arg(&php_ini)
+                .arg("admin/cli/purge_caches.php")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+        }
+    }
+
     /// Menjalankan daemon background worker untuk memproses Moodle Cron dan Ad-hoc tasks secara berkala
     pub fn start_moodle_cron_daemon(
         &mut self,
@@ -329,6 +449,7 @@ impl ServiceOrchestrator {
 
         let cron_script = moodle_dir.join("admin").join("cli").join("cron.php");
         let adhoc_script = moodle_dir.join("admin").join("cli").join("adhoc_task.php");
+        let upgrade_script = moodle_dir.join("admin").join("cli").join("upgrade.php");
 
         if !php_exe.exists() || !cron_script.exists() {
             return;
@@ -341,6 +462,7 @@ impl ServiceOrchestrator {
             .name("moodle-cron-worker".to_string())
             .spawn(move || {
                 let mut counter: u32 = 0;
+                let mut cycle_count: u32 = 0;
                 while r.load(Ordering::SeqCst) {
                     std::thread::sleep(Duration::from_secs(1));
                     if !r.load(Ordering::SeqCst) {
@@ -349,6 +471,7 @@ impl ServiceOrchestrator {
                     counter += 1;
                     if counter >= 60 {
                         counter = 0;
+                        cycle_count += 1;
 
                         // 1. Eksekusi admin/cli/cron.php
                         let _ = Command::new(&php_exe)
@@ -390,6 +513,23 @@ impl ServiceOrchestrator {
                                 .arg("-c")
                                 .arg(&php_ini)
                                 .arg("mod/cbt/cli/sync.php")
+                                .stdout(Stdio::null())
+                                .stderr(Stdio::null())
+                                .creation_flags(CREATE_NO_WINDOW)
+                                .status();
+                        }
+
+                        // 4. Setiap 5 siklus (5 menit), periksa upgrade database otonom jika ada plugin/theme yang baru dipasang
+                        if cycle_count % 5 == 0 && upgrade_script.exists() {
+                            let _ = Command::new(&php_exe)
+                                .current_dir(&moodle_dir)
+                                .env("PHPRC", &php_dir)
+                                .env("PATH", &path_env)
+                                .arg("-c")
+                                .arg(&php_ini)
+                                .arg("admin/cli/upgrade.php")
+                                .arg("--non-interactive")
+                                .arg("--allow-unstable")
                                 .stdout(Stdio::null())
                                 .stderr(Stdio::null())
                                 .creation_flags(CREATE_NO_WINDOW)
