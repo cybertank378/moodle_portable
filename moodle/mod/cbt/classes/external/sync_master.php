@@ -81,7 +81,12 @@ class sync_master extends external_api {
                 break;
 
             case 'push_course':
-                $res = self::upsert_course($data);
+                \mod_cbt\observer::$suppress_webhook = true;
+                try {
+                    $res = self::upsert_course($data);
+                } finally {
+                    \mod_cbt\observer::$suppress_webhook = false;
+                }
                 return [
                     'success' => $res['success'],
                     'message' => $res['message'],
@@ -90,7 +95,12 @@ class sync_master extends external_api {
                 ];
 
             case 'push_question':
-                $res = self::upsert_question($data);
+                \mod_cbt\observer::$suppress_webhook = true;
+                try {
+                    $res = self::upsert_question($data);
+                } finally {
+                    \mod_cbt\observer::$suppress_webhook = false;
+                }
                 return [
                     'success' => $res['success'],
                     'message' => $res['message'],
@@ -98,16 +108,68 @@ class sync_master extends external_api {
                     'data_json' => json_encode($res),
                 ];
 
+            case 'delete_entity':
+                \mod_cbt\observer::$suppress_webhook = true;
+                try {
+                    $res = self::delete_remote_entity($data);
+                } finally {
+                    \mod_cbt\observer::$suppress_webhook = false;
+                }
+                return [
+                    'success' => $res['success'],
+                    'message' => $res['message'],
+                    'record_id' => (int)($data['moodle_id'] ?? 0),
+                    'data_json' => json_encode($res),
+                ];
+
             case 'pull_all':
             default:
                 $groupsuc = new manage_classes_and_users();
                 $examuc = new manage_exam_schedule();
+                $errors = [];
+
+                $courses = [];
+                try {
+                    $courses = self::fetch_courses();
+                } catch (\Throwable $e) {
+                    $errors[] = self::format_exception('courses', $e);
+                }
+
+                $classes = [];
+                try {
+                    $classes = $groupsuc->list_classes();
+                } catch (\Throwable $e) {
+                    $errors[] = self::format_exception('classes', $e);
+                }
+
+                $students = [];
+                try {
+                    $students = $groupsuc->list_all_students();
+                } catch (\Throwable $e) {
+                    $errors[] = self::format_exception('students', $e);
+                }
+
+                $exams = [];
+                try {
+                    $exams = $examuc->list_schedules();
+                } catch (\Throwable $e) {
+                    $errors[] = self::format_exception('exams', $e);
+                }
+
+                $questions = [];
+                try {
+                    $questions = self::fetch_questions();
+                } catch (\Throwable $e) {
+                    $errors[] = self::format_exception('questions', $e);
+                }
+
                 $result = [
-                    'courses' => self::fetch_courses(),
-                    'classes' => $groupsuc->list_classes(),
-                    'students' => $groupsuc->list_all_students(),
-                    'exams' => $examuc->list_schedules(),
-                    'questions' => self::fetch_questions(),
+                    'courses' => $courses,
+                    'classes' => $classes,
+                    'students' => $students,
+                    'exams' => $exams,
+                    'questions' => $questions,
+                    'errors' => $errors,
                     'synced_at' => time(),
                 ];
                 break;
@@ -119,6 +181,14 @@ class sync_master extends external_api {
             'record_id' => 0,
             'data_json' => json_encode($result),
         ];
+    }
+
+    private static function format_exception(string $section, \Throwable $e): string {
+        $msg = $section . ': ' . $e->getMessage();
+        if (property_exists($e, 'debuginfo') && !empty($e->debuginfo)) {
+            $msg .= ' [' . $e->debuginfo . ']';
+        }
+        return $msg;
     }
 
     /**
@@ -158,16 +228,22 @@ class sync_master extends external_api {
             return [];
         }
 
-        $sql = "SELECT q.id, q.name, q.questiontext, q.qtype, q.defaultmark, q.generalfeedback
-                  FROM {question} q
-                 WHERE q.parent = 0
-              ORDER BY q.id DESC";
-
-        $records = $DB->get_records_sql($sql, [], 0, 500);
+        $hasAnswersTable = $dbman->table_exists('question_answers');
+        $records = $DB->get_records_select(
+            'question',
+            'parent = 0',
+            null,
+            'id DESC',
+            'id, name, questiontext, qtype, defaultmark, generalfeedback',
+            0,
+            500
+        );
         $list = [];
 
         foreach ($records as $q) {
-            $answers = $DB->get_records('question_answers', ['question' => $q->id], 'id ASC');
+            $answers = $hasAnswersTable
+                ? $DB->get_records('question_answers', ['question' => $q->id], 'id ASC')
+                : [];
             $options = [];
             $idx = 0;
             $labels = ['A', 'B', 'C', 'D', 'E', 'F'];
@@ -203,6 +279,7 @@ class sync_master extends external_api {
         global $DB, $CFG;
         require_once($CFG->dirroot . '/course/lib.php');
 
+        $moodleCourseId = (int)($data['moodle_course_id'] ?? 0);
         $name = trim((string)($data['name'] ?? ''));
         if ($name === '') {
             throw new \moodle_exception('invalidcourse', 'error');
@@ -213,13 +290,22 @@ class sync_master extends external_api {
             $shortname = strtoupper(preg_replace('/[^A-Za-z0-9]+/', '-', $name));
         }
 
-        $existing = $DB->get_record('course', ['fullname' => $name]);
+        $existing = null;
+        if ($moodleCourseId > 1) {
+            $existing = $DB->get_record('course', ['id' => $moodleCourseId]);
+        }
+        if (!$existing) {
+            $existing = $DB->get_record('course', ['fullname' => $name]);
+        }
         if (!$existing) {
             $existing = $DB->get_record('course', ['shortname' => $shortname]);
         }
 
         if ($existing) {
             $existing->fullname = $name;
+            if (!empty($data['short_name'])) {
+                $existing->shortname = $shortname;
+            }
             $existing->summary = (string)($data['description'] ?? $existing->summary);
             $existing->timemodified = time();
             $DB->update_record('course', $existing);
@@ -317,6 +403,53 @@ class sync_master extends external_api {
             'question_id' => $qid,
             'message' => "Soal {$code} berhasil disinkronkan ke Moodle.",
         ];
+    }
+
+    /**
+     * Delete or deactivate a Moodle entity pushed from Aksaventra CBT.
+     */
+    private static function delete_remote_entity(array $data): array {
+        global $DB, $CFG;
+
+        $entity = (string)($data['entity'] ?? '');
+        $moodleid = (int)($data['moodle_id'] ?? 0);
+        if ($moodleid <= 0) {
+            return ['success' => false, 'message' => 'ID Moodle tidak valid'];
+        }
+
+        switch ($entity) {
+            case 'cohort':
+                $DB->delete_records('cohort_members', ['cohortid' => $moodleid]);
+                $DB->delete_records('cohort', ['id' => $moodleid]);
+                return ['success' => true, 'message' => "Cohort #{$moodleid} dihapus dari Moodle."];
+
+            case 'user':
+                require_once($CFG->dirroot . '/user/lib.php');
+                $user = $DB->get_record('user', ['id' => $moodleid, 'deleted' => 0]);
+                if ($user) {
+                    delete_user($user);
+                }
+                return ['success' => true, 'message' => "User #{$moodleid} dihapus dari Moodle."];
+
+            case 'course':
+                if ($moodleid > 1) {
+                    $DB->set_field('course', 'visible', 0, ['id' => $moodleid]);
+                }
+                return ['success' => true, 'message' => "Course #{$moodleid} disembunyikan/dihapus."];
+
+            case 'cbt':
+                $DB->delete_records('cbt_roster', ['cbtid' => $moodleid]);
+                $DB->delete_records('cbt', ['id' => $moodleid]);
+                return ['success' => true, 'message' => "CBT #{$moodleid} dihapus dari Moodle."];
+
+            case 'question':
+                $DB->delete_records('question_answers', ['question' => $moodleid]);
+                $DB->delete_records('question', ['id' => $moodleid]);
+                return ['success' => true, 'message' => "Soal #{$moodleid} dihapus dari Moodle."];
+
+            default:
+                return ['success' => false, 'message' => 'Entitas delete tidak dikenal'];
+        }
     }
 
     public static function execute_returns(): external_single_structure {

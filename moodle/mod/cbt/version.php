@@ -24,7 +24,7 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026111601;       // The current module version (Date: YYYYMMDDXX).
+$plugin->version   = 2026111701;       // The current module version (Date: YYYYMMDDXX).
 $plugin->requires  = 2025040800;       // Requires Moodle 5.0+.
 $plugin->component = 'mod_cbt';        // Full name of the plugin.
 $plugin->maturity  = MATURITY_STABLE;

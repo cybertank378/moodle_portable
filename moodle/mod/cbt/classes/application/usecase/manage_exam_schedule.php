@@ -36,38 +36,31 @@ class manage_exam_schedule {
     public function list_schedules(int $courseid = 0): array {
         global $DB;
 
-        $params = [];
-        $where = "1=1";
-        if ($courseid > 0) {
-            $where = "c.course = :courseid";
-            $params['courseid'] = $courseid;
+        $dbman = $DB->get_manager();
+        if (!$dbman->table_exists('cbt')) {
+            return [];
         }
 
-        $sql = "SELECT c.id, c.course, co.fullname AS coursename, c.name, c.intro,
-                       c.timeopen, c.timeclose, c.timelimit, c.maxstrikes,
-                       c.active_token, c.token_expiry, c.grade
-                  FROM {cbt} c
-                  JOIN {course} co ON co.id = c.course
-                 WHERE {$where}
-              ORDER BY c.timeopen ASC, c.id DESC";
+        $conditions = $courseid > 0 ? ['course' => $courseid] : [];
+        $records = $DB->get_records('cbt', $conditions, 'timeopen ASC, id DESC');
+        $courses = $DB->get_records_menu('course', null, '', 'id, fullname');
 
-        $records = $DB->get_records_sql($sql, $params);
         $result = [];
-
         foreach ($records as $rec) {
+            $cid = (int)($rec->course ?? 0);
             $result[] = [
                 'id' => (int)$rec->id,
-                'course_id' => (int)$rec->course,
-                'course_name' => $rec->coursename,
-                'title' => $rec->name,
-                'intro' => $rec->intro ?? '',
-                'time_open' => (int)$rec->timeopen,
-                'time_close' => (int)$rec->timeclose,
-                'duration_seconds' => (int)$rec->timelimit,
-                'max_strikes' => (int)$rec->maxstrikes,
-                'active_token' => $rec->active_token,
-                'token_expiry' => (int)$rec->token_expiry,
-                'max_grade' => (float)$rec->grade,
+                'course_id' => $cid,
+                'course_name' => (string)($courses[$cid] ?? 'Mata Pelajaran'),
+                'title' => (string)$rec->name,
+                'intro' => (string)($rec->intro ?? ''),
+                'time_open' => (int)($rec->timeopen ?? 0),
+                'time_close' => (int)($rec->timeclose ?? 0),
+                'duration_seconds' => (int)($rec->timelimit ?? 7200),
+                'max_strikes' => (int)($rec->maxstrikes ?? 3),
+                'active_token' => (string)($rec->active_token ?? ''),
+                'token_expiry' => (int)($rec->token_expiry ?? 0),
+                'max_grade' => (float)($rec->grade ?? 100),
             ];
         }
 

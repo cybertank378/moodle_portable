@@ -145,6 +145,42 @@ function xmldb_cbt_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026110901, 'cbt');
     }
 
+    if ($oldversion < 2026111701) {
+        if (get_config('mod_cbt', 'webhook_secret') === false) {
+            set_config('webhook_secret', 'aksaventra_sync_secret_2026', 'mod_cbt');
+        }
+
+        $service = $DB->get_record('external_services', ['shortname' => 'mod_cbt_service']);
+        if ($service) {
+            $fname = 'mod_cbt_sync_master';
+            $frec = $DB->get_record('external_functions', ['name' => $fname]);
+            if (!$frec) {
+                $frec = new stdClass();
+                $frec->name = $fname;
+                $frec->classname = 'mod_cbt\\external\\sync_master';
+                $frec->methodname = 'execute';
+                $frec->classpath = '';
+                $frec->component = 'mod_cbt';
+                $frec->capabilities = 'mod/cbt:manage';
+                $frec->services = 'mod_cbt_service';
+                $DB->insert_record('external_functions', $frec);
+            }
+
+            $link = $DB->get_record('external_services_functions', [
+                'externalserviceid' => $service->id,
+                'functionname' => $fname,
+            ]);
+            if (!$link) {
+                $link = new stdClass();
+                $link->externalserviceid = $service->id;
+                $link->functionname = $fname;
+                $DB->insert_record('external_services_functions', $link);
+            }
+        }
+
+        upgrade_mod_savepoint(true, 2026111701, 'cbt');
+    }
+
     return true;
 }
 

@@ -72,16 +72,29 @@ set_config('default_maxstrikes', 3, 'mod_cbt');
 cli_writeln("[3/7] Mendaftarkan External Service mod_cbt_service...");
 $service = $DB->get_record('external_services', ['shortname' => 'mod_cbt_service']);
 if (!$service) {
-    $service = new stdClass();
-    $service->name = 'CBT Examination Service';
-    $service->shortname = 'mod_cbt_service';
-    $service->restrictedusers = 0;
-    $service->enabled = 1;
-    $service->timecreated = time();
-    $service->timemodified = time();
-    $service->id = $DB->insert_record('external_services', $service);
-    cli_writeln("  -> Service mod_cbt_service berhasil dibuat (ID: {$service->id}).");
+    // Periksa apakah service bernama 'CBT Examination Service' sudah ada tetapi belum memiliki shortname
+    $existing_by_name = $DB->get_record('external_services', ['name' => 'CBT Examination Service']);
+    if ($existing_by_name) {
+        $existing_by_name->shortname = 'mod_cbt_service';
+        $existing_by_name->enabled = 1;
+        $existing_by_name->restrictedusers = 0;
+        $existing_by_name->timemodified = time();
+        $DB->update_record('external_services', $existing_by_name);
+        $service = $existing_by_name;
+        cli_writeln("  -> Service CBT Examination Service diperbarui dengan shortname mod_cbt_service (ID: {$service->id}).");
+    } else {
+        $service = new stdClass();
+        $service->name = 'CBT Examination Service';
+        $service->shortname = 'mod_cbt_service';
+        $service->restrictedusers = 0;
+        $service->enabled = 1;
+        $service->timecreated = time();
+        $service->timemodified = time();
+        $service->id = $DB->insert_record('external_services', $service);
+        cli_writeln("  -> Service mod_cbt_service berhasil dibuat (ID: {$service->id}).");
+    }
 } else {
+    $service->name = 'CBT Examination Service';
     $service->enabled = 1;
     $service->restrictedusers = 0;
     $service->timemodified = time();
