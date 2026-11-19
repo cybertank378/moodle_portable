@@ -102,11 +102,9 @@ class manage_classes_and_users {
         }
 
         if ($replace_cohort) {
-            $DB->delete_records('cohort_members', ['userid' => $user_id]);
-        }
-
-        // If class_id provided, add student to cohort
-        if ($class_id > 0) {
+            $this->replace_student_cohort($user_id, $class_id);
+        } else if ($class_id > 0) {
+            // If class_id provided without replace, add student to cohort
             $this->add_member_to_cohort($class_id, $user_id);
         }
 
@@ -118,16 +116,17 @@ class manage_classes_and_users {
     }
 
     /**
-     * Create or update a classroom/group (cohort).
+     * Create or update a classroom/group (Moodle Cohort) using official Moodle cohort API.
      *
      * @param string $name Class name e.g. "X RPL 1"
-     * @param string $code Class code e.g. "X-RPL-1"
+     * @param string $code Class/Cohort idnumber e.g. "X-RPL-1"
      * @param string $description
      * @param int $moodle_id Optional existing cohort id
      * @return array [ 'success' => bool, 'class_id' => int, 'message' => string ]
      */
     public function create_class_group(string $name, string $code = '', string $description = '', int $moodle_id = 0): array {
-        global $DB;
+        global $DB, $CFG;
+        require_once($CFG->dirroot . '/cohort/lib.php');
 
         $name = trim($name);
         $code = trim($code !== '' ? $code : str_replace(' ', '-', strtoupper($name)));
@@ -135,6 +134,9 @@ class manage_classes_and_users {
         $existing = null;
         if ($moodle_id > 0) {
             $existing = $DB->get_record('cohort', ['id' => $moodle_id]);
+        }
+        if (!$existing && $code !== '') {
+            $existing = $DB->get_record('cohort', ['idnumber' => $code]);
         }
         if (!$existing) {
             $existing = $DB->get_record('cohort', ['name' => $name]);
@@ -144,37 +146,35 @@ class manage_classes_and_users {
             $existing->name = $name;
             $existing->idnumber = $code;
             $existing->description = $description;
-            $existing->timemodified = time();
-            $DB->update_record('cohort', $existing);
+            $existing->visible = 1;
+            cohort_update_cohort($existing);
             return [
                 'success' => true,
                 'class_id' => (int)$existing->id,
-                'message' => "Kelas {$name} berhasil diperbarui.",
+                'message' => "Cohort/Kelas {$name} berhasil diperbarui.",
             ];
         }
 
-        $now = time();
+        $syscontext = \context_system::instance();
         $cohort = new \stdClass();
-        $cohort->contextid = 1; // System context
+        $cohort->contextid = $syscontext->id;
         $cohort->name = $name;
         $cohort->idnumber = $code;
         $cohort->description = $description;
         $cohort->descriptionformat = FORMAT_HTML;
         $cohort->visible = 1;
-        $cohort->timecreated = $now;
-        $cohort->timemodified = $now;
 
-        $id = (int)$DB->insert_record('cohort', $cohort);
+        $id = (int)cohort_add_cohort($cohort);
 
         return [
             'success' => true,
             'class_id' => $id,
-            'message' => "Kelas {$name} berhasil dibuat.",
+            'message' => "Cohort/Kelas {$name} berhasil dibuat.",
         ];
     }
 
     /**
-     * List all classrooms/groups with student counts using portable DML queries.
+     * List all visible Moodle cohorts (classrooms/groups) with student counts.
      *
      * @return array
      */
@@ -199,7 +199,7 @@ class manage_classes_and_users {
                 'id' => (int)$r->id,
                 'name' => $r->name,
                 'code' => $r->idnumber ?? '',
-                'description' => $r->description ?? '',
+                'description' => trim(strip_tags((string)($r->description ?? ''))),
                 'student_count' => $countmap[(int)$r->id] ?? 0,
             ];
         }
@@ -208,25 +208,99 @@ class manage_classes_and_users {
     }
 
     /**
-     * Add student to classroom/cohort.
+     * Add student to Moodle cohort using official cohort_add_member API (triggers cohort enrol sync).
      *
      * @param int $cohortid
      * @param int $userid
      * @return bool
      */
     public function add_member_to_cohort(int $cohortid, int $userid): bool {
-        global $DB;
-        $exists = $DB->record_exists('cohort_members', ['cohortid' => $cohortid, 'userid' => $userid]);
-        if ($exists) {
+        global $DB, $CFG;
+        if ($cohortid <= 0 || $userid <= 0) {
+            return false;
+        }
+        if (!$DB->record_exists('cohort', ['id' => $cohortid])) {
+            return false;
+        }
+        if ($DB->record_exists('cohort_members', ['cohortid' => $cohortid, 'userid' => $userid])) {
             return true;
         }
 
-        $record = new \stdClass();
-        $record->cohortid = $cohortid;
-        $record->userid = $userid;
-        $record->timeadded = time();
+        require_once($CFG->dirroot . '/cohort/lib.php');
+        cohort_add_member($cohortid, $userid);
+        return true;
+    }
 
-        return (bool)$DB->insert_record('cohort_members', $record);
+    /**
+     * Remove student from Moodle cohort using official cohort_remove_member API.
+     *
+     * @param int $cohortid
+     * @param int $userid
+     * @return bool
+     */
+    public function remove_member_from_cohort(int $cohortid, int $userid): bool {
+        global $DB, $CFG;
+        if ($cohortid <= 0 || $userid <= 0) {
+            return false;
+        }
+        if (!$DB->record_exists('cohort_members', ['cohortid' => $cohortid, 'userid' => $userid])) {
+            return true;
+        }
+
+        require_once($CFG->dirroot . '/cohort/lib.php');
+        cohort_remove_member($cohortid, $userid);
+        return true;
+    }
+
+    /**
+     * Replace a student's cohort membership cleanly without churning existing matching cohort.
+     *
+     * @param int $userid
+     * @param int $target_cohortid 0 to unassign from all cohorts
+     * @return void
+     */
+    public function replace_student_cohort(int $userid, int $target_cohortid = 0): void {
+        global $DB, $CFG;
+        if ($userid <= 0) {
+            return;
+        }
+        require_once($CFG->dirroot . '/cohort/lib.php');
+
+        $current = $DB->get_records('cohort_members', ['userid' => $userid]);
+        foreach ($current as $cm) {
+            if ((int)$cm->cohortid !== $target_cohortid) {
+                cohort_remove_member((int)$cm->cohortid, $userid);
+            }
+        }
+
+        if ($target_cohortid > 0) {
+            $this->add_member_to_cohort($target_cohortid, $userid);
+        }
+    }
+
+    /**
+     * Batch assign/unassign multiple students to a Moodle cohort.
+     *
+     * @param array $userids
+     * @param int $cohortid 0 to remove from all cohorts
+     * @param bool $replace
+     * @return int Number of processed users
+     */
+    public function bulk_assign_cohort(array $userids, int $cohortid = 0, bool $replace = true): int {
+        $count = 0;
+        foreach ($userids as $uid) {
+            $userid = (int)$uid;
+            if ($userid <= 0) {
+                continue;
+            }
+            if ($replace) {
+                $this->replace_student_cohort($userid, $cohortid);
+            } else if ($cohortid > 0) {
+                $this->add_member_to_cohort($cohortid, $userid);
+            }
+            $count++;
+        }
+        return $count;
     }
 
     /**

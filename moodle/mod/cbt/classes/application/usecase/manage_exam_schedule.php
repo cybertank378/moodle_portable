@@ -42,7 +42,16 @@ class manage_exam_schedule {
         }
 
         $conditions = $courseid > 0 ? ['course' => $courseid] : [];
-        $records = $DB->get_records('cbt', $conditions, 'timeopen ASC, id DESC');
+        try {
+            $records = $DB->get_records('cbt', $conditions, 'timeopen ASC, id DESC');
+        } catch (\Throwable $e) {
+            $detail = $e->getMessage() . ' ' . (property_exists($e, 'debuginfo') ? (string)$e->debuginfo : '');
+            if (stripos($detail, "doesn't exist") !== false || stripos($detail, '1932') !== false) {
+                debugging('mod_cbt table mdl_cbt is missing in storage engine: ' . $detail, DEBUG_DEVELOPER);
+                return [];
+            }
+            throw $e;
+        }
         $courses = $DB->get_records_menu('course', null, '', 'id, fullname');
 
         $result = [];

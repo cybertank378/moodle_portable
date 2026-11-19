@@ -419,8 +419,14 @@ class sync_master extends external_api {
 
         switch ($entity) {
             case 'cohort':
-                $DB->delete_records('cohort_members', ['cohortid' => $moodleid]);
-                $DB->delete_records('cohort', ['id' => $moodleid]);
+                require_once($CFG->dirroot . '/cohort/lib.php');
+                $cohort = $DB->get_record('cohort', ['id' => $moodleid]);
+                if ($cohort) {
+                    cohort_delete_cohort($cohort);
+                } else {
+                    $DB->delete_records('cohort_members', ['cohortid' => $moodleid]);
+                    $DB->delete_records('cohort', ['id' => $moodleid]);
+                }
                 return ['success' => true, 'message' => "Cohort #{$moodleid} dihapus dari Moodle."];
 
             case 'user':
