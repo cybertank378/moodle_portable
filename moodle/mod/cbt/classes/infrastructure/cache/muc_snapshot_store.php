@@ -99,14 +99,36 @@ class muc_snapshot_store {
         $questions_snapshot = [];
         $answer_keys = [];
 
-        // 1. Attempt to fetch questions linked to course category or question table if available
+        // 1. Attempt to fetch latest 'ready' questions from Moodle 5.x versioned question bank
         $q_records = [];
         try {
-            $sql = "SELECT q.id, q.qtype, q.name, q.questiontext, q.questiontextformat, q.defaultmark
-                      FROM {question} q
-                     WHERE q.qtype IN ('multichoice', 'truefalse', 'shortanswer', 'numerical', 'match', 'essay', 'gapselect', 'ddwtos')
-                       AND q.parent = 0
-                  ORDER BY q.id ASC";
+            $dbman = $DB->get_manager();
+            $hasVersioning = $dbman->table_exists('question_versions')
+                && $dbman->table_exists('question_bank_entries');
+            $allowedTypes = "('multichoice', 'truefalse', 'shortanswer', 'numerical', 'match', 'essay', 'gapselect', 'ddwtos', 'ordering', 'calculated')";
+
+            if ($hasVersioning) {
+                $sql = "SELECT q.id, q.qtype, q.name, q.questiontext, q.questiontextformat,
+                               q.defaultmark, q.generalfeedback, qbe.idnumber AS code
+                          FROM {question} q
+                          JOIN {question_versions} qv ON qv.questionid = q.id
+                          JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+                         WHERE q.parent = 0
+                           AND q.qtype IN {$allowedTypes}
+                           AND qv.status = 'ready'
+                           AND qv.version = (
+                               SELECT MAX(v2.version)
+                                 FROM {question_versions} v2
+                                WHERE v2.questionbankentryid = qbe.id
+                           )
+                      ORDER BY q.id DESC";
+            } else {
+                $sql = "SELECT q.id, q.qtype, q.name, q.questiontext, q.questiontextformat, q.defaultmark
+                          FROM {question} q
+                         WHERE q.qtype IN {$allowedTypes}
+                           AND q.parent = 0
+                      ORDER BY q.id DESC";
+            }
             $q_records = $DB->get_records_sql($sql, [], 0, 50);
         } catch (\Throwable $e) {
             $q_records = [];
@@ -133,18 +155,21 @@ class muc_snapshot_store {
                     $options = [];
                     $correct_keys = [];
                     $single_correct = 'A';
-                    $opt_labels = ['A', 'B', 'C', 'D', 'E', 'F'];
+                    $best_fraction = -1.0;
+                    $opt_labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
                     $opt_idx = 0;
 
                     foreach ($answers as $ans) {
                         $label = $opt_labels[$opt_idx] ?? ('OPT' . ($opt_idx + 1));
+                        $frac = (float)$ans->fraction;
                         $options[] = [
                             'key' => $label,
                             'html' => $ans->answer,
                         ];
-                        if ((float)$ans->fraction > 0.0) {
+                        if ($frac > 0.0) {
                             $correct_keys[] = $label;
-                            if ((float)$ans->fraction > 0.5) {
+                            if ($frac > $best_fraction) {
+                                $best_fraction = $frac;
                                 $single_correct = $label;
                             }
                         }
@@ -301,6 +326,102 @@ class muc_snapshot_store {
                         'type' => 'match',
                         'weight' => $weight,
                         'key' => $pairs,
+                    ];
+
+                } else if ($q->qtype === 'ordering') {
+                    // Moodle 5 qtype_ordering stores ordered items in question_answers ordered by fraction ASC.
+                    $answers = $DB->get_records('question_answers', ['question' => $qid], 'fraction ASC, id ASC');
+                    $items = [];
+                    $expected_order = [];
+                    $gradingtype = 'absolute';
+
+                    try {
+                        $ord_opts = $DB->get_record('qtype_ordering_options', ['questionid' => $qid]);
+                        if ($ord_opts && isset($ord_opts->gradingtype)) {
+                            // Moodle qtype_ordering constants: 0=ALL_OR_NOTHING, 1=ABSOLUTE_POSITION, 2=RELATIVE_NEXT_EXCLUDE_LAST, 4/5/7=RELATIVE_ALL_PREVIOUS_AND_NEXT
+                            $gt = (int)$ord_opts->gradingtype;
+                            if ($gt === 0) {
+                                $gradingtype = 'all_or_nothing';
+                            } else if ($gt === 1) {
+                                $gradingtype = 'absolute';
+                            } else {
+                                $gradingtype = 'relative_pairs';
+                            }
+                        }
+                    } catch (\Throwable $e) {
+                        $gradingtype = 'absolute';
+                    }
+
+                    $idx = 1;
+                    foreach ($answers as $ans) {
+                        $itemkey = 'ITEM_' . $idx;
+                        $items[] = [
+                            'key' => $itemkey,
+                            'html' => $ans->answer,
+                        ];
+                        $expected_order[] = $itemkey;
+                        $idx++;
+                    }
+
+                    $questions_snapshot[] = [
+                        'slot' => $slot++,
+                        'questionId' => $qid,
+                        'type' => 'ordering',
+                        'stemHtml' => $q->questiontext,
+                        'options' => $items,
+                    ];
+
+                    $answer_keys[$qid] = [
+                        'type' => 'ordering',
+                        'weight' => $weight,
+                        'key' => [
+                            'order' => $expected_order,
+                            'gradingtype' => $gradingtype,
+                        ],
+                    ];
+
+                } else if ($q->qtype === 'calculated') {
+                    $answers = $DB->get_records('question_answers', ['question' => $qid], 'fraction DESC');
+                    $formula = '';
+                    $tolerance = 0.01;
+                    $tolerancetype = 'relative';
+
+                    if (!empty($answers)) {
+                        $primary = reset($answers);
+                        $formula = trim((string)$primary->answer);
+                        try {
+                            $calcrec = $DB->get_record('question_calculated', ['answer' => $primary->id]);
+                            if ($calcrec) {
+                                if (isset($calcrec->tolerance) && is_numeric($calcrec->tolerance)) {
+                                    $tolerance = (float)$calcrec->tolerance;
+                                }
+                                if (isset($calcrec->tolerancetype)) {
+                                    $tt = (int)$calcrec->tolerancetype;
+                                    $tolerancetype = ($tt === 2) ? 'nominal' : (($tt === 3) ? 'geometric' : 'relative');
+                                }
+                            }
+                        } catch (\Throwable $e) {
+                            $tolerance = 0.01;
+                            $tolerancetype = 'relative';
+                        }
+                    }
+
+                    $questions_snapshot[] = [
+                        'slot' => $slot++,
+                        'questionId' => $qid,
+                        'type' => 'calculated',
+                        'stemHtml' => $q->questiontext,
+                        'options' => [],
+                    ];
+
+                    $answer_keys[$qid] = [
+                        'type' => 'calculated',
+                        'weight' => $weight,
+                        'key' => [
+                            'formula' => $formula,
+                            'tolerance' => $tolerance,
+                            'tolerancetype' => $tolerancetype,
+                        ],
                     ];
 
                 } else if ($q->qtype === 'essay') {

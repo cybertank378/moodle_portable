@@ -298,5 +298,145 @@ class domain_score_calculator_test extends \advanced_testcase {
         $invalid = token_generator::validate('XXXXXX', $secret, '', 0, 900);
         $this->assertFalse($invalid);
     }
+
+    public function test_mcma_alias_penalty_and_duplicate_guard() {
+        $keys = [
+            202 => ['type' => 'mcma', 'weight' => 3.0, 'key' => ['A', 'C', 'D']],
+        ];
+
+        // 2 of 3 correct, 0 wrong -> 2/3 * 100 = 66.66667
+        $res_partial = score_calculator::calculate($keys, [202 => ['ans' => ['A', 'C']]], 100.0);
+        $this->assertEquals(66.66667, $res_partial['sumgrades']);
+
+        // 2 correct + 1 wrong -> (2/3 - 1/3) = 1/3 -> 33.33333
+        $res_penalty = score_calculator::calculate($keys, [202 => ['ans' => ['A', 'C', 'B']]], 100.0);
+        $this->assertEquals(33.33333, $res_penalty['sumgrades']);
+
+        // 1 correct + 2 wrong -> (1/3 - 2/3) clamped to 0.0
+        $res_clamp = score_calculator::calculate($keys, [202 => ['ans' => ['A', 'B', 'E']]], 100.0);
+        $this->assertEquals(0.0, $res_clamp['sumgrades']);
+
+        // Duplicate correct answer injection ['A', 'A', 'A'] must only count once -> 1/3
+        $res_dup = score_calculator::calculate($keys, [202 => ['ans' => ['A', 'A', 'A']]], 100.0);
+        $this->assertEquals(33.33333, $res_dup['sumgrades']);
+    }
+
+    public function test_ordering_absolute_position_grading() {
+        // Plain array defaults to Moodle 5 absolute position grading
+        $keys = [
+            901 => ['type' => 'ordering', 'weight' => 4.0, 'key' => ['ITEM_1', 'ITEM_2', 'ITEM_3', 'ITEM_4']],
+        ];
+
+        // Full match -> 4/4 = 100%
+        $res_full = score_calculator::calculate($keys, [901 => ['ans' => ['ITEM_1', 'ITEM_2', 'ITEM_3', 'ITEM_4']]], 100.0);
+        $this->assertEquals(100.0, $res_full['sumgrades']);
+
+        // 2 of 4 positions match (ITEM_1 and ITEM_4) -> 50%
+        $res_half = score_calculator::calculate($keys, [901 => ['ans' => ['ITEM_1', 'ITEM_3', 'ITEM_2', 'ITEM_4']]], 100.0);
+        $this->assertEquals(50.0, $res_half['sumgrades']);
+
+        // Shifted completely -> 0/4 = 0%
+        $res_shift = score_calculator::calculate($keys, [901 => ['ans' => ['ITEM_2', 'ITEM_3', 'ITEM_4', 'ITEM_1']]], 100.0);
+        $this->assertEquals(0.0, $res_shift['sumgrades']);
+    }
+
+    public function test_ordering_relative_pairs_and_all_or_nothing_grading() {
+        $keys_rel = [
+            902 => [
+                'type' => 'ordering',
+                'weight' => 6.0,
+                'key' => [
+                    'order' => ['A', 'B', 'C', 'D'],
+                    'gradingtype' => 'relative_pairs',
+                ],
+            ],
+        ];
+
+        // Full match -> 6/6 pairs = 100%
+        $res_full = score_calculator::calculate($keys_rel, [902 => ['ans' => ['A', 'B', 'C', 'D']]], 100.0);
+        $this->assertEquals(100.0, $res_full['sumgrades']);
+
+        // Swap only B and C -> ['A', 'C', 'B', 'D']: 5 of 6 pairs preserve order -> 83.33333%
+        $res_swap = score_calculator::calculate($keys_rel, [902 => ['ans' => ['A', 'C', 'B', 'D']]], 100.0);
+        $this->assertEquals(83.33333, $res_swap['sumgrades']);
+
+        // Completely reversed -> 0/6 pairs = 0%
+        $res_rev = score_calculator::calculate($keys_rel, [902 => ['ans' => ['D', 'C', 'B', 'A']]], 100.0);
+        $this->assertEquals(0.0, $res_rev['sumgrades']);
+
+        // All-or-nothing mode
+        $keys_aon = [
+            903 => [
+                'type' => 'ordering',
+                'weight' => 2.0,
+                'key' => [
+                    'order' => ['A', 'B', 'C'],
+                    'gradingtype' => 'all_or_nothing',
+                ],
+            ],
+        ];
+        $res_aon_ok = score_calculator::calculate($keys_aon, [903 => ['ans' => ['A', 'B', 'C']]], 100.0);
+        $this->assertEquals(100.0, $res_aon_ok['sumgrades']);
+        $res_aon_fail = score_calculator::calculate($keys_aon, [903 => ['ans' => ['A', 'C', 'B']]], 100.0);
+        $this->assertEquals(0.0, $res_aon_fail['sumgrades']);
+    }
+
+    public function test_calculated_formula_with_nominal_relative_and_geometric_tolerance() {
+        // 1. Nominal tolerance: {a} * {b} + sqrt({c}) = 4 * 5 + 3 = 23 (+/- 0.5)
+        $keys_nom = [
+            1001 => [
+                'type' => 'calculated',
+                'weight' => 2.0,
+                'key' => [
+                    'formula' => '{a} * {b} + sqrt({c})',
+                    'variables' => ['a' => 4, 'b' => 5, 'c' => 9],
+                    'tolerance' => 0.5,
+                    'tolerancetype' => 'nominal',
+                ],
+            ],
+        ];
+        $this->assertEquals(100.0, score_calculator::calculate($keys_nom, [1001 => ['ans' => 23.0]], 100.0)['sumgrades']);
+        $this->assertEquals(100.0, score_calculator::calculate($keys_nom, [1001 => ['ans' => '23,5']], 100.0)['sumgrades']);
+        $this->assertEquals(0.0, score_calculator::calculate($keys_nom, [1001 => ['ans' => 23.6]], 100.0)['sumgrades']);
+
+        // 2. Relative tolerance (5% of 200 = +/- 10 => [190, 210])
+        $keys_rel = [
+            1002 => [
+                'type' => 'calculated',
+                'weight' => 2.0,
+                'key' => [
+                    'formula' => 'pow({x}, 2) * 2',
+                    'dataset' => ['x' => 10],
+                    'tolerance' => 0.05,
+                    'tolerancetype' => 'relative',
+                ],
+            ],
+        ];
+        $this->assertEquals(100.0, score_calculator::calculate($keys_rel, [1002 => ['ans' => 190.0]], 100.0)['sumgrades']);
+        $this->assertEquals(100.0, score_calculator::calculate($keys_rel, [1002 => ['ans' => 210.0]], 100.0)['sumgrades']);
+        $this->assertEquals(0.0, score_calculator::calculate($keys_rel, [1002 => ['ans' => 211.0]], 100.0)['sumgrades']);
+
+        // 3. Geometric tolerance: target = 100, tol = 0.25 -> [80, 125]
+        $keys_geo = [
+            1003 => [
+                'type' => 'calculated',
+                'weight' => 1.0,
+                'key' => [
+                    'answer' => 100.0,
+                    'tolerance' => 0.25,
+                    'tolerancetype' => 'geometric',
+                ],
+            ],
+        ];
+        $this->assertEquals(100.0, score_calculator::calculate($keys_geo, [1003 => ['ans' => 80.0]], 100.0)['sumgrades']);
+        $this->assertEquals(100.0, score_calculator::calculate($keys_geo, [1003 => ['ans' => 125.0]], 100.0)['sumgrades']);
+        $this->assertEquals(0.0, score_calculator::calculate($keys_geo, [1003 => ['ans' => 79.0]], 100.0)['sumgrades']);
+
+        // 4. Formula using pi() & safe handling of division by zero / unsafe characters
+        $area = score_calculator::evaluate_formula('pi() * {r}^2', ['r' => 7]);
+        $this->assertEquals(153.93804, round($area, 5));
+        $this->assertEquals(null, score_calculator::evaluate_formula('{a} / 0', ['a' => 10]));
+        $this->assertEquals(null, score_calculator::evaluate_formula('system("whoami")', []));
+    }
 }
 
