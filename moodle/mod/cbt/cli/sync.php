@@ -333,9 +333,267 @@ try {
         $user_count++;
     }
 
+    // 2.5. SINKRONISASI BANK SOAL MOODLE 5 (mdl_question + mdl_question_versions -> Question)
+    $dbman = $DB->get_manager();
+    $question_count = 0;
+    $questions_list = [];
+    $answer_keys_map = [];
+
+    if ($dbman->table_exists('question')) {
+        $hasVersioning = $dbman->table_exists('question_versions')
+            && $dbman->table_exists('question_bank_entries');
+        $hasAnswersTable = $dbman->table_exists('question_answers');
+        $hasNumericalTable = $dbman->table_exists('question_numerical');
+        $hasMcOptionsTable = $dbman->table_exists('qtype_multichoice_options');
+
+        // Build map of question category id -> course fullname for Subject labeling
+        $cat_subject_map = [];
+        if ($dbman->table_exists('question_categories')) {
+            try {
+                $cat_rows = $DB->get_records_sql("
+                    SELECT qc.id, ctx.contextlevel, ctx.instanceid
+                      FROM {question_categories} qc
+                      JOIN {context} ctx ON ctx.id = qc.contextid
+                ");
+                $course_names = [];
+                foreach ($courses as $co) {
+                    $course_names[(int)$co->id] = trim((string)$co->fullname);
+                }
+                $cm_course_map = [];
+                if ($dbman->table_exists('course_modules')) {
+                    $cms = $DB->get_records('course_modules', null, '', 'id, course');
+                    foreach ($cms as $cm) {
+                        $cm_course_map[(int)$cm->id] = (int)$cm->course;
+                    }
+                }
+                foreach ($cat_rows as $cr) {
+                    $cid = 0;
+                    if ((int)$cr->contextlevel === CONTEXT_COURSE) {
+                        $cid = (int)$cr->instanceid;
+                    } else if ((int)$cr->contextlevel === CONTEXT_MODULE && isset($cm_course_map[(int)$cr->instanceid])) {
+                        $cid = $cm_course_map[(int)$cr->instanceid];
+                    }
+                    if ($cid > 0 && isset($course_names[$cid]) && $course_names[$cid] !== '') {
+                        $cat_subject_map[(int)$cr->id] = $course_names[$cid];
+                    }
+                }
+            } catch (Throwable $e) {
+                $cat_subject_map = [];
+            }
+        }
+
+        if ($hasVersioning) {
+            $raw_questions = $DB->get_records_sql("
+                SELECT q.id, q.qtype, q.name, q.questiontext, q.questiontextformat,
+                       q.defaultmark, q.generalfeedback, qbe.idnumber AS code,
+                       qbe.questioncategoryid
+                  FROM {question} q
+                  JOIN {question_versions} qv ON qv.questionid = q.id
+                  JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+                 WHERE q.parent = 0
+                   AND qv.status = 'ready'
+                   AND qv.version = (
+                       SELECT MAX(v2.version)
+                         FROM {question_versions} v2
+                        WHERE v2.questionbankentryid = qbe.id
+                   )
+                 ORDER BY q.id DESC
+            ", [], 0, 500);
+        } else {
+            $raw_questions = $DB->get_records_sql("
+                SELECT q.id, q.qtype, q.name, q.questiontext, q.questiontextformat,
+                       q.defaultmark, q.generalfeedback
+                  FROM {question} q
+                 WHERE q.parent = 0
+                 ORDER BY q.id DESC
+            ", [], 0, 500);
+        }
+
+        $stmt_q_select = $pdo->prepare("SELECT id FROM `Question` WHERE `moodleQuestionId` = ? OR `code` = ? LIMIT 1");
+        $stmt_q_code_check = $pdo->prepare("SELECT id FROM `Question` WHERE `code` = ? AND `id` <> ? LIMIT 1");
+        $stmt_q_update = $pdo->prepare("
+            UPDATE `Question`
+               SET `moodleQuestionId` = ?,
+                   `code` = ?,
+                   `subject` = ?,
+                   `type` = ?,
+                   `stem` = ?,
+                   `points` = ?,
+                   `tolerance` = ?,
+                   `optionsJson` = ?,
+                   `explanation` = ?,
+                   `updatedAt` = NOW(3)
+             WHERE `id` = ?
+        ");
+        $stmt_q_insert = $pdo->prepare("
+            INSERT INTO `Question` (`id`, `moodleQuestionId`, `code`, `subject`, `gradeLevel`, `type`, `stem`, `points`, `tolerance`, `optionsJson`, `explanation`, `createdAt`, `updatedAt`)
+            VALUES (?, ?, ?, ?, 'UMUM', ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))
+        ");
+
+        $labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+        $slot = 1;
+
+        foreach ($raw_questions as $rq) {
+            $qid = (int)$rq->id;
+            $points = (float)(!empty($rq->defaultmark) ? $rq->defaultmark : 1.0);
+            $answers = $hasAnswersTable
+                ? $DB->get_records('question_answers', ['question' => $qid], 'id ASC')
+                : [];
+
+            $opts_for_db = [];
+            $opts_for_exam = [];
+            $idx = 0;
+            $positiveCount = 0;
+            $correctKeys = [];
+            $primaryCorrectKey = 'A';
+            $primaryAnswerId = 0;
+            $primaryAnswerText = '';
+            $bestFraction = -1.0;
+
+            foreach ($answers as $ans) {
+                $key = $labels[$idx] ?? (string)($idx + 1);
+                $frac = (float)$ans->fraction;
+                $isCorrect = $frac > 0.0;
+                if ($isCorrect) {
+                    $positiveCount++;
+                    $correctKeys[] = $key;
+                }
+                if ($frac > $bestFraction) {
+                    $bestFraction = $frac;
+                    $primaryCorrectKey = $key;
+                    $primaryAnswerId = (int)$ans->id;
+                    $primaryAnswerText = trim(strip_tags((string)$ans->answer));
+                }
+
+                $opts_for_db[] = [
+                    'id' => 'moodle-ans-' . $ans->id,
+                    'label' => $key,
+                    'text' => trim(strip_tags((string)$ans->answer)),
+                    'fraction' => $frac,
+                    'isCorrect' => $isCorrect,
+                ];
+                $opts_for_exam[] = [
+                    'key' => $key,
+                    'html' => trim((string)$ans->answer),
+                ];
+                $idx++;
+            }
+
+            // Detect MCMA vs single choice
+            $effectiveType = (string)$rq->qtype;
+            if ($effectiveType === 'multichoice') {
+                $isSingle = true;
+                if ($hasMcOptionsTable) {
+                    try {
+                        $mcopt = $DB->get_record('qtype_multichoice_options', ['questionid' => $qid]);
+                        if ($mcopt && isset($mcopt->single)) {
+                            $isSingle = ((int)$mcopt->single === 1);
+                        } else if ($positiveCount > 1) {
+                            $isSingle = false;
+                        }
+                    } catch (Throwable $e) {
+                        $isSingle = ($positiveCount <= 1);
+                    }
+                } else if ($positiveCount > 1) {
+                    $isSingle = false;
+                }
+                if (!$isSingle) {
+                    $effectiveType = 'mcma';
+                }
+            }
+
+            // Fetch tolerance for numerical questions from mdl_question_numerical
+            $tolerance = null;
+            if ($rq->qtype === 'numerical' && $hasNumericalTable) {
+                try {
+                    $numrec = null;
+                    if ($primaryAnswerId > 0) {
+                        $numrec = $DB->get_record('question_numerical', ['answer' => $primaryAnswerId]);
+                    }
+                    if (!$numrec) {
+                        $numrec = $DB->get_record('question_numerical', ['question' => $qid], '*', IGNORE_MULTIPLE);
+                    }
+                    $tolerance = ($numrec && isset($numrec->tolerance) && is_numeric($numrec->tolerance))
+                        ? (float)$numrec->tolerance
+                        : 0.0;
+                } catch (Throwable $e) {
+                    $tolerance = 0.0;
+                }
+            }
+
+            $qcode = (isset($rq->code) && trim((string)$rq->code) !== '')
+                ? mb_substr(trim((string)$rq->code), 0, 180)
+                : ('MDL-Q-' . $qid);
+            $qsubject = (isset($rq->questioncategoryid) && isset($cat_subject_map[(int)$rq->questioncategoryid]))
+                ? $cat_subject_map[(int)$rq->questioncategoryid]
+                : 'Umum';
+            $qexplanation = trim(strip_tags((string)($rq->generalfeedback ?? ''))) ?: null;
+            $optionsJson = json_encode($opts_for_db, JSON_UNESCAPED_UNICODE);
+
+            $stmt_q_select->execute([$qid, $qcode]);
+            $qrow = $stmt_q_select->fetch();
+
+            if ($qrow) {
+                $stmt_q_code_check->execute([$qcode, $qrow['id']]);
+                if ($stmt_q_code_check->fetch()) {
+                    $qcode = 'MDL-Q-' . $qid;
+                }
+                $stmt_q_update->execute([
+                    $qid,
+                    $qcode,
+                    $qsubject,
+                    $effectiveType,
+                    (string)$rq->questiontext,
+                    $points,
+                    $tolerance,
+                    $optionsJson,
+                    $qexplanation,
+                    $qrow['id'],
+                ]);
+            } else {
+                $stmt_q_insert->execute([
+                    generate_uuid_v4(),
+                    $qid,
+                    $qcode,
+                    $qsubject,
+                    $effectiveType,
+                    (string)$rq->questiontext,
+                    $points,
+                    $tolerance,
+                    $optionsJson,
+                    $qexplanation,
+                ]);
+            }
+            $question_count++;
+
+            // Also prepare snapshot payload for Exam sync (cap at 100 items per exam)
+            if ($slot <= 100) {
+                $questions_list[] = [
+                    'slot' => $slot,
+                    'questionId' => $qid,
+                    'type' => $effectiveType,
+                    'points' => $points,
+                    'tolerance' => $tolerance,
+                    'stemHtml' => (string)$rq->questiontext,
+                    'options' => $opts_for_exam,
+                ];
+                if ($effectiveType === 'mcma') {
+                    $answer_keys_map[(string)$qid] = !empty($correctKeys) ? $correctKeys : [$primaryCorrectKey];
+                } else if ($effectiveType === 'numerical') {
+                    $answer_keys_map[(string)$qid] = [
+                        'answer' => is_numeric($primaryAnswerText) ? (float)$primaryAnswerText : 0.0,
+                        'tolerance' => $tolerance ?? 0.0,
+                    ];
+                } else {
+                    $answer_keys_map[(string)$qid] = $primaryCorrectKey;
+                }
+                $slot++;
+            }
+        }
+    }
+
     // 3. SINKRONISASI SESI UJIAN (CBT)
     $cbt_count = 0;
-    $dbman = $DB->get_manager();
     if ($dbman->table_exists('cbt')) {
         $cbts = $DB->get_records_sql("
             SELECT c.id, c.name, c.intro, c.course, c.timelimit, c.maxstrikes, c.active_token, c.timeopen, c.timeclose,
@@ -365,50 +623,6 @@ try {
             INSERT INTO `Exam` (`id`, `moodleCbtId`, `title`, `courseName`, `durationSeconds`, `maxStrikes`, `sebRequired`, `activeToken`, `tokenExpiresAt`, `questionsJson`, `answerKeysJson`, `timeOpen`, `timeClose`, `createdAt`, `updatedAt`)
             VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))
         ");
-
-        // Ambil bank soal Moodle untuk dijadikan soal ujian jika tersedia
-        $questions_list = [];
-        $answer_keys_map = [];
-
-        if ($dbman->table_exists('question')) {
-            $raw_questions = $DB->get_records_sql("
-                SELECT q.id, q.name, q.questiontext, q.qtype, q.defaultmark
-                  FROM {question} q
-                 WHERE q.parent = 0
-                 ORDER BY q.id ASC
-                 LIMIT 100
-            ");
-            $slot = 1;
-            foreach ($raw_questions as $rq) {
-                $answers = $DB->get_records('question_answers', ['question' => $rq->id], 'id ASC');
-                $opts = [];
-                $labels = ['A', 'B', 'C', 'D', 'E'];
-                $idx = 0;
-                $correctKey = 'A';
-
-                foreach ($answers as $ans) {
-                    $key = $labels[$idx] ?? (string)($idx + 1);
-                    $opts[] = [
-                        'key' => $key,
-                        'html' => trim((string)$ans->answer),
-                    ];
-                    if ((float)$ans->fraction > 0) {
-                        $correctKey = $key;
-                    }
-                    $idx++;
-                }
-
-                $questions_list[] = [
-                    'slot' => $slot,
-                    'questionId' => (int)$rq->id,
-                    'type' => (string)$rq->qtype,
-                    'stemHtml' => (string)$rq->questiontext,
-                    'options' => $opts,
-                ];
-                $answer_keys_map[(string)$rq->id] = $correctKey;
-                $slot++;
-            }
-        }
 
         $now_dt = new DateTime();
         $default_open = (clone $now_dt)->format('Y-m-d H:i:s.000');
@@ -449,6 +663,7 @@ try {
         'counts' => [
             'classes' => $class_count,
             'students' => $user_count,
+            'questions' => $question_count,
             'exams' => $cbt_count,
         ],
         'timestamp' => time(),

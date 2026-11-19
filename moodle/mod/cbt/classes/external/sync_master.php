@@ -218,7 +218,9 @@ class sync_master extends external_api {
     }
 
     /**
-     * Fetch Moodle question bank entries (compatible with Moodle 4.x/5.x schema).
+     * Fetch Moodle question bank entries (Moodle 5.x versioned schema with graceful fallback).
+     * Only retrieves the latest version with status = 'ready' so historical/draft/hidden revisions
+     * are never duplicated in Aksaventra CBT.
      */
     private static function fetch_questions(): array {
         global $DB;
@@ -228,42 +230,132 @@ class sync_master extends external_api {
             return [];
         }
 
+        $hasVersioning = $dbman->table_exists('question_versions')
+            && $dbman->table_exists('question_bank_entries');
         $hasAnswersTable = $dbman->table_exists('question_answers');
-        $records = $DB->get_records_select(
-            'question',
-            'parent = 0',
-            null,
-            'id DESC',
-            'id, name, questiontext, qtype, defaultmark, generalfeedback',
-            0,
-            500
-        );
+        $hasNumericalTable = $dbman->table_exists('question_numerical');
+        $hasMcOptionsTable = $dbman->table_exists('qtype_multichoice_options');
+
+        if ($hasVersioning) {
+            $sql = "SELECT q.id, q.qtype, q.name, q.questiontext, q.questiontextformat,
+                           q.defaultmark, q.generalfeedback, qbe.idnumber AS code,
+                           qbe.id AS questionbankentryid, qv.version
+                      FROM {question} q
+                      JOIN {question_versions} qv ON qv.questionid = q.id
+                      JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+                     WHERE q.parent = 0
+                       AND qv.status = 'ready'
+                       AND qv.version = (
+                           SELECT MAX(v2.version)
+                             FROM {question_versions} v2
+                            WHERE v2.questionbankentryid = qbe.id
+                       )
+                  ORDER BY q.id DESC";
+            $records = $DB->get_records_sql($sql, [], 0, 500);
+        } else {
+            $records = $DB->get_records_select(
+                'question',
+                'parent = 0',
+                null,
+                'id DESC',
+                'id, name, questiontext, questiontextformat, qtype, defaultmark, generalfeedback',
+                0,
+                500
+            );
+        }
+
         $list = [];
+        $labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
         foreach ($records as $q) {
+            $qid = (int)$q->id;
             $answers = $hasAnswersTable
-                ? $DB->get_records('question_answers', ['question' => $q->id], 'id ASC')
+                ? $DB->get_records('question_answers', ['question' => $qid], 'id ASC')
                 : [];
+
             $options = [];
             $idx = 0;
-            $labels = ['A', 'B', 'C', 'D', 'E', 'F'];
+            $positiveCount = 0;
+            $primaryAnswerId = 0;
+            $highestFraction = -1.0;
+
             foreach ($answers as $ans) {
+                $frac = (float)$ans->fraction;
+                $isCorrect = $frac > 0.0;
+                if ($isCorrect) {
+                    $positiveCount++;
+                }
+                if ($frac > $highestFraction) {
+                    $highestFraction = $frac;
+                    $primaryAnswerId = (int)$ans->id;
+                }
+
                 $options[] = [
                     'id' => 'moodle-ans-' . $ans->id,
                     'label' => $labels[$idx] ?? (string)($idx + 1),
                     'text' => trim(strip_tags((string)$ans->answer)),
-                    'isCorrect' => ((float)$ans->fraction) > 0,
+                    'fraction' => $frac,
+                    'isCorrect' => $isCorrect,
                 ];
                 $idx++;
             }
 
+            // Determine CBT question type (map multi-response multichoice -> mcma).
+            $effectiveType = (string)$q->qtype;
+            if ($effectiveType === 'multichoice') {
+                $isSingle = true;
+                if ($hasMcOptionsTable) {
+                    try {
+                        $mcopt = $DB->get_record('qtype_multichoice_options', ['questionid' => $qid]);
+                        if ($mcopt && isset($mcopt->single)) {
+                            $isSingle = ((int)$mcopt->single === 1);
+                        } else if ($positiveCount > 1) {
+                            $isSingle = false;
+                        }
+                    } catch (\Throwable $e) {
+                        $isSingle = ($positiveCount <= 1);
+                    }
+                } else if ($positiveCount > 1) {
+                    $isSingle = false;
+                }
+                if (!$isSingle) {
+                    $effectiveType = 'mcma';
+                }
+            }
+
+            // Retrieve tolerance metadata for numerical questions from mdl_question_numerical.
+            $tolerance = null;
+            if ($q->qtype === 'numerical' && $hasNumericalTable) {
+                try {
+                    $numrec = null;
+                    if ($primaryAnswerId > 0) {
+                        $numrec = $DB->get_record('question_numerical', ['answer' => $primaryAnswerId]);
+                    }
+                    if (!$numrec) {
+                        $numrec = $DB->get_record('question_numerical', ['question' => $qid], '*', IGNORE_MULTIPLE);
+                    }
+                    $tolerance = ($numrec && isset($numrec->tolerance) && is_numeric($numrec->tolerance))
+                        ? (float)$numrec->tolerance
+                        : 0.0;
+                } catch (\Throwable $e) {
+                    $tolerance = 0.0;
+                }
+            }
+
+            $code = (isset($q->code) && trim((string)$q->code) !== '')
+                ? trim((string)$q->code)
+                : ('MDL-Q-' . $qid);
+
             $list[] = [
-                'id' => (int)$q->id,
-                'code' => 'MDL-Q-' . $q->id,
+                'id' => $qid,
+                'questionbankentryid' => (int)($q->questionbankentryid ?? 0),
+                'version' => (int)($q->version ?? 1),
+                'code' => $code,
                 'name' => $q->name,
-                'type' => (string)$q->qtype,
+                'type' => $effectiveType,
                 'stem' => (string)$q->questiontext,
-                'points' => (float)($q->defaultmark ?: 1),
+                'points' => (float)($q->defaultmark ?: 1.0),
+                'tolerance' => $tolerance,
                 'explanation' => strip_tags((string)($q->generalfeedback ?? '')),
                 'options' => $options,
             ];
@@ -339,32 +431,234 @@ class sync_master extends external_api {
     }
 
     /**
-     * Create or update a question in Moodle question tables from Next.js Question Bank.
+     * Resolve or provision a valid Moodle 5.x question category ID for a course/subject.
+     * In Moodle 5.x, question categories belong to a CONTEXT_MODULE (mod_qbank) context.
+     * Falls back gracefully to Moodle 4.x / existing categories if needed.
+     */
+    private static function resolve_default_question_category(array $data): int {
+        global $DB, $CFG;
+        require_once($CFG->libdir . '/questionlib.php');
+
+        // 1. Resolve target course from moodle_course_id or subject name.
+        $course = null;
+        $courseid = (int)($data['moodle_course_id'] ?? 0);
+        if ($courseid > 1) {
+            $course = $DB->get_record('course', ['id' => $courseid]);
+        }
+        if (!$course && !empty($data['subject'])) {
+            $subj = trim((string)$data['subject']);
+            $course = $DB->get_record('course', ['fullname' => $subj]);
+            if (!$course) {
+                $course = $DB->get_record('course', ['shortname' => $subj]);
+            }
+        }
+        if (!$course) {
+            $course = $DB->get_record_sql(
+                'SELECT * FROM {course} WHERE id > 1 AND visible = 1 ORDER BY id ASC',
+                [],
+                IGNORE_MULTIPLE
+            );
+        }
+        if (!$course) {
+            $course = get_site();
+        }
+
+        // 2. Moodle 5.x native shared Question Bank module (mod_qbank / CONTEXT_MODULE).
+        if ($course && class_exists('\core_question\local\bank\question_bank_helper')) {
+            try {
+                $modinfo = get_fast_modinfo($course);
+                $qbankmodname = \core_question\local\bank\question_bank_helper::get_default_question_bank_activity_name();
+                $qbanks = $modinfo->get_instances_of($qbankmodname);
+                $cm = !empty($qbanks) ? reset($qbanks) : null;
+
+                if (!$cm) {
+                    $cm = \core_question\local\bank\question_bank_helper::get_default_open_instance_system_type($course, true);
+                }
+
+                if ($cm) {
+                    $modcontext = \context_module::instance($cm->id);
+                    $cat = question_get_default_category($modcontext->id, true);
+                    if ($cat && !empty($cat->id)) {
+                        return (int)$cat->id;
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Fall through to legacy/direct category lookup below.
+            }
+        }
+
+        // 3. Fallback for Moodle 4.x or course context lookup.
+        if ($course) {
+            try {
+                $coursecontext = \context_course::instance($course->id);
+                $existingcat = $DB->get_record_select(
+                    'question_categories',
+                    'contextid = ? AND parent <> 0',
+                    [$coursecontext->id],
+                    'id ASC',
+                    '*',
+                    IGNORE_MULTIPLE
+                );
+                if ($existingcat) {
+                    return (int)$existingcat->id;
+                }
+            } catch (\Throwable $e) {
+                // Continue to generic fallback.
+            }
+        }
+
+        // 4. Use any existing non-top category if available.
+        $anycat = $DB->get_record_select('question_categories', 'parent <> 0', null, 'id ASC', '*', IGNORE_MULTIPLE);
+        if ($anycat) {
+            return (int)$anycat->id;
+        }
+
+        // 5. Last resort: create top + default category on course or system context.
+        $ctxid = $course ? \context_course::instance($course->id)->id : \context_system::instance()->id;
+        $top = $DB->get_record('question_categories', ['contextid' => $ctxid, 'parent' => 0]);
+        if (!$top) {
+            $top = new \stdClass();
+            $top->name = 'top';
+            $top->info = '';
+            $top->infoformat = FORMAT_HTML;
+            $top->contextid = $ctxid;
+            $top->parent = 0;
+            $top->sortorder = 0;
+            $top->stamp = make_unique_id_code();
+            $top->id = (int)$DB->insert_record('question_categories', $top);
+        }
+
+        $defaultcat = new \stdClass();
+        $defaultcat->name = 'Default for Aksaventra CBT';
+        $defaultcat->info = 'Kategori bank soal default untuk sinkronisasi Aksaventra CBT.';
+        $defaultcat->infoformat = FORMAT_HTML;
+        $defaultcat->contextid = $ctxid;
+        $defaultcat->parent = (int)$top->id;
+        $defaultcat->sortorder = 999;
+        $defaultcat->stamp = make_unique_id_code();
+        return (int)$DB->insert_record('question_categories', $defaultcat);
+    }
+
+    /**
+     * Create or update a question in Moodle 5.x question tables from Next.js Question Bank.
+     * Registers mdl_question_bank_entries & mdl_question_versions, distributes MCMA fractions
+     * proportionally per Moodle rules, sets mdl_qtype_multichoice_options.single, and stores
+     * numerical tolerance in mdl_question_numerical.
      */
     private static function upsert_question(array $data): array {
         global $DB, $USER;
 
+        $dbman = $DB->get_manager();
         $now = time();
+        $ownerid = !empty($USER->id) ? (int)$USER->id : 2;
         $moodleid = (int)($data['moodle_question_id'] ?? 0);
         $stem = (string)($data['stem'] ?? '');
-        $qtype = (string)($data['type'] ?? 'multichoice');
+        $rawType = strtolower(trim((string)($data['type'] ?? 'multichoice')));
         $points = (float)($data['points'] ?? 1.0);
         $code = trim((string)($data['code'] ?? 'CBT-Q-' . $now));
         $explanation = (string)($data['explanation'] ?? '');
         $options = is_array($data['options'] ?? null) ? $data['options'] : [];
+        $tolerance = (isset($data['tolerance']) && is_numeric($data['tolerance'])) ? (float)$data['tolerance'] : 0.0;
 
-        // Map Aksaventra mcma -> Moodle multichoice
-        $moodleQtype = $qtype === 'mcma' ? 'multichoice' : $qtype;
+        // Normalize CBT question type -> Moodle native qtype.
+        $isMcma = in_array($rawType, ['mcma', 'multichoice_multi'], true);
+        if (in_array($rawType, ['mcma', 'multichoice_multi', 'multichoice_single', 'multichoice'], true)) {
+            $moodleQtype = 'multichoice';
+        } else {
+            $moodleQtype = $rawType;
+        }
 
-        if ($moodleid > 0 && $DB->record_exists('question', ['id' => $moodleid])) {
-            $q = $DB->get_record('question', ['id' => $moodleid]);
-            $q->name = $code;
-            $q->questiontext = $stem;
-            $q->defaultmark = $points;
-            $q->generalfeedback = $explanation;
-            $q->timemodified = $now;
-            $DB->update_record('question', $q);
-            $qid = (int)$q->id;
+        // Count correct options to validate MCMA vs single choice.
+        $totalCorrect = 0;
+        foreach ($options as $opt) {
+            if (!empty($opt['isCorrect'])) {
+                $totalCorrect++;
+            }
+        }
+        if ($moodleQtype === 'multichoice' && $totalCorrect > 1) {
+            $isMcma = true;
+        }
+
+        $hasVersioning = $dbman->table_exists('question_bank_entries')
+            && $dbman->table_exists('question_versions');
+        $qbeid = 0;
+        $version = 1;
+        $categoryid = 0;
+
+        // Try matching existing question by moodle_question_id or by bank entry idnumber.
+        $existingQ = null;
+        if ($moodleid > 0) {
+            $existingQ = $DB->get_record('question', ['id' => $moodleid]);
+        }
+        if (!$existingQ && $hasVersioning && $code !== '') {
+            $existingEntry = $DB->get_record('question_bank_entries', ['idnumber' => $code], '*', IGNORE_MULTIPLE);
+            if ($existingEntry) {
+                $latestVer = $DB->get_record_sql(
+                    "SELECT * FROM {question_versions} WHERE questionbankentryid = ? ORDER BY version DESC",
+                    [$existingEntry->id],
+                    IGNORE_MULTIPLE
+                );
+                if ($latestVer) {
+                    $existingQ = $DB->get_record('question', ['id' => $latestVer->questionid]);
+                    $qbeid = (int)$existingEntry->id;
+                    $version = (int)$latestVer->version;
+                    $categoryid = (int)$existingEntry->questioncategoryid;
+                }
+            }
+        }
+
+        if ($existingQ) {
+            $existingQ->name = $code;
+            $existingQ->questiontext = $stem;
+            $existingQ->defaultmark = $points;
+            $existingQ->generalfeedback = $explanation;
+            $existingQ->qtype = $moodleQtype;
+            $existingQ->timemodified = $now;
+            $existingQ->modifiedby = $ownerid;
+            $DB->update_record('question', $existingQ);
+            $qid = (int)$existingQ->id;
+
+            // Auto-heal missing Moodle 5 bank entry/version rows on legacy pushed questions.
+            if ($hasVersioning) {
+                $qvExisting = $DB->get_record('question_versions', ['questionid' => $qid], '*', IGNORE_MULTIPLE);
+                if ($qvExisting) {
+                    $qbeid = (int)$qvExisting->questionbankentryid;
+                    $version = (int)$qvExisting->version;
+                    if ($qvExisting->status !== 'ready') {
+                        $qvExisting->status = 'ready';
+                        $DB->update_record('question_versions', $qvExisting);
+                    }
+                    $entryRec = $DB->get_record('question_bank_entries', ['id' => $qbeid]);
+                    if ($entryRec) {
+                        $categoryid = (int)$entryRec->questioncategoryid;
+                    }
+                } else {
+                    $categoryid = self::resolve_default_question_category($data);
+                    $idnumber = $code !== '' ? $code : null;
+                    if ($idnumber !== null && $DB->record_exists('question_bank_entries', [
+                        'questioncategoryid' => $categoryid,
+                        'idnumber' => $idnumber,
+                    ])) {
+                        $idnumber = $idnumber . '-' . $qid;
+                    }
+                    $qbe = new \stdClass();
+                    $qbe->questioncategoryid = $categoryid;
+                    $qbe->idnumber = $idnumber;
+                    $qbe->ownerid = $ownerid;
+                    if ($dbman->field_exists('question_bank_entries', 'nextversion')) {
+                        $qbe->nextversion = 2;
+                    }
+                    $qbeid = (int)$DB->insert_record('question_bank_entries', $qbe);
+
+                    $qv = new \stdClass();
+                    $qv->questionbankentryid = $qbeid;
+                    $qv->version = 1;
+                    $qv->questionid = $qid;
+                    $qv->status = 'ready';
+                    $DB->insert_record('question_versions', $qv);
+                    $version = 1;
+                }
+            }
         } else {
             $q = new \stdClass();
             $q->parent = 0;
@@ -380,28 +674,138 @@ class sync_master extends external_api {
             $q->stamp = make_unique_id_code();
             $q->timecreated = $now;
             $q->timemodified = $now;
-            $q->createdby = $USER->id ?? 2;
-            $q->modifiedby = $USER->id ?? 2;
+            $q->createdby = $ownerid;
+            $q->modifiedby = $ownerid;
             $qid = (int)$DB->insert_record('question', $q);
+
+            // Register question natively in Moodle 5 question_bank_entries & question_versions.
+            if ($hasVersioning) {
+                $categoryid = self::resolve_default_question_category($data);
+                $idnumber = $code !== '' ? $code : null;
+                if ($idnumber !== null && $DB->record_exists('question_bank_entries', [
+                    'questioncategoryid' => $categoryid,
+                    'idnumber' => $idnumber,
+                ])) {
+                    $idnumber = $idnumber . '-' . $qid;
+                }
+
+                $qbe = new \stdClass();
+                $qbe->questioncategoryid = $categoryid;
+                $qbe->idnumber = $idnumber;
+                $qbe->ownerid = $ownerid;
+                if ($dbman->field_exists('question_bank_entries', 'nextversion')) {
+                    $qbe->nextversion = 2;
+                }
+                $qbeid = (int)$DB->insert_record('question_bank_entries', $qbe);
+
+                $qv = new \stdClass();
+                $qv->questionbankentryid = $qbeid;
+                $qv->version = 1;
+                $qv->questionid = $qid;
+                $qv->status = 'ready';
+                $DB->insert_record('question_versions', $qv);
+                $version = 1;
+            }
         }
 
-        // Sync answers
+        // Sync question_answers with Moodle 5 proportional fraction rules.
         $DB->delete_records('question_answers', ['question' => $qid]);
+        if ($moodleQtype === 'numerical' && $dbman->table_exists('question_numerical')) {
+            $DB->delete_records('question_numerical', ['question' => $qid]);
+        }
+
+        // Handle numerical questions that pass scalar 'answer' without options array.
+        if ($moodleQtype === 'numerical' && empty($options) && isset($data['answer'])) {
+            $options = [[
+                'text' => (string)$data['answer'],
+                'isCorrect' => true,
+                'tolerance' => $tolerance,
+            ]];
+            $totalCorrect = 1;
+        }
+
+        $mcmaPositive = ($totalCorrect > 0) ? round(1.0 / $totalCorrect, 7) : 0.0;
+        $mcmaNegative = ($totalCorrect > 0) ? round(-1.0 / $totalCorrect, 7) : 0.0;
+
         foreach ($options as $opt) {
+            $isCorrect = !empty($opt['isCorrect']);
+            if ($moodleQtype === 'multichoice' && $isMcma) {
+                $fraction = $isCorrect ? $mcmaPositive : $mcmaNegative;
+            } else if ($moodleQtype === 'multichoice') {
+                $fraction = $isCorrect ? 1.0 : 0.0;
+            } else if (isset($opt['fraction']) && is_numeric($opt['fraction'])) {
+                $fraction = (float)$opt['fraction'];
+            } else {
+                $fraction = $isCorrect ? 1.0 : 0.0;
+            }
+
             $ans = new \stdClass();
             $ans->question = $qid;
-            $ans->answer = (string)($opt['text'] ?? '');
-            $ans->answerformat = FORMAT_HTML;
-            $ans->fraction = !empty($opt['isCorrect']) ? 1.0 : 0.0;
-            $ans->feedback = '';
+            $ans->answer = (string)($opt['text'] ?? $opt['answer'] ?? '');
+            $ans->answerformat = ($moodleQtype === 'numerical' || $moodleQtype === 'shortanswer') ? FORMAT_PLAIN : FORMAT_HTML;
+            $ans->fraction = $fraction;
+            $ans->feedback = (string)($opt['feedback'] ?? '');
             $ans->feedbackformat = FORMAT_HTML;
-            $DB->insert_record('question_answers', $ans);
+            $ansid = (int)$DB->insert_record('question_answers', $ans);
+
+            // Store numerical tolerance metadata in mdl_question_numerical.
+            if ($moodleQtype === 'numerical' && $dbman->table_exists('question_numerical')) {
+                $optTolerance = (isset($opt['tolerance']) && is_numeric($opt['tolerance']))
+                    ? (float)$opt['tolerance']
+                    : $tolerance;
+                $num = new \stdClass();
+                $num->question = $qid;
+                $num->answer = $ansid;
+                $num->tolerance = (string)$optTolerance;
+                $DB->insert_record('question_numerical', $num);
+            }
+        }
+
+        // Upsert qtype_multichoice_options so Moodle 5 renders single vs MCMA properly.
+        if ($moodleQtype === 'multichoice' && $dbman->table_exists('qtype_multichoice_options')) {
+            $mcopt = $DB->get_record('qtype_multichoice_options', ['questionid' => $qid]);
+            if ($mcopt) {
+                $mcopt->single = $isMcma ? 0 : 1;
+                $DB->update_record('qtype_multichoice_options', $mcopt);
+            } else {
+                $mcopt = new \stdClass();
+                $mcopt->questionid = $qid;
+                $mcopt->layout = 0;
+                $mcopt->single = $isMcma ? 0 : 1;
+                $mcopt->shuffleanswers = 1;
+                $mcopt->correctfeedback = '';
+                $mcopt->correctfeedbackformat = FORMAT_HTML;
+                $mcopt->partiallycorrectfeedback = '';
+                $mcopt->partiallycorrectfeedbackformat = FORMAT_HTML;
+                $mcopt->incorrectfeedback = '';
+                $mcopt->incorrectfeedbackformat = FORMAT_HTML;
+                $mcopt->answernumbering = 'abc';
+                $mcopt->shownumcorrect = 0;
+                $mcopt->showstandardinstruction = 1;
+                $DB->insert_record('qtype_multichoice_options', $mcopt);
+            }
+        }
+
+        // Ensure question_numerical_options exists for numerical questions.
+        if ($moodleQtype === 'numerical' && $dbman->table_exists('question_numerical_options')) {
+            if (!$DB->record_exists('question_numerical_options', ['question' => $qid])) {
+                $numopt = new \stdClass();
+                $numopt->question = $qid;
+                $numopt->showunits = 3; // Units not used at all.
+                $numopt->unitsleft = 0;
+                $numopt->unitgradingtype = 0;
+                $numopt->unitpenalty = 0.1;
+                $DB->insert_record('question_numerical_options', $numopt);
+            }
         }
 
         return [
             'success' => true,
             'question_id' => $qid,
-            'message' => "Soal {$code} berhasil disinkronkan ke Moodle.",
+            'questionbankentry_id' => $qbeid,
+            'category_id' => $categoryid,
+            'version' => $version,
+            'message' => "Soal {$code} berhasil disinkronkan ke Bank Soal Moodle 5.",
         ];
     }
 
@@ -449,7 +853,28 @@ class sync_master extends external_api {
                 return ['success' => true, 'message' => "CBT #{$moodleid} dihapus dari Moodle."];
 
             case 'question':
+                $dbman = $DB->get_manager();
+                if ($dbman->table_exists('question_numerical')) {
+                    $DB->delete_records('question_numerical', ['question' => $moodleid]);
+                }
+                if ($dbman->table_exists('question_numerical_options')) {
+                    $DB->delete_records('question_numerical_options', ['question' => $moodleid]);
+                }
+                if ($dbman->table_exists('qtype_multichoice_options')) {
+                    $DB->delete_records('qtype_multichoice_options', ['questionid' => $moodleid]);
+                }
                 $DB->delete_records('question_answers', ['question' => $moodleid]);
+                if ($dbman->table_exists('question_versions')) {
+                    $qvs = $DB->get_records('question_versions', ['questionid' => $moodleid]);
+                    $DB->delete_records('question_versions', ['questionid' => $moodleid]);
+                    if ($dbman->table_exists('question_bank_entries')) {
+                        foreach ($qvs as $qv) {
+                            if (!$DB->record_exists('question_versions', ['questionbankentryid' => $qv->questionbankentryid])) {
+                                $DB->delete_records('question_bank_entries', ['id' => $qv->questionbankentryid]);
+                            }
+                        }
+                    }
+                }
                 $DB->delete_records('question', ['id' => $moodleid]);
                 return ['success' => true, 'message' => "Soal #{$moodleid} dihapus dari Moodle."];
 
