@@ -54,11 +54,13 @@ cli_heading("Aksaventra CBT Auto-Configuration Engine");
 
 global $DB, $CFG;
 
-// 1. Enable Global Web Services & REST protocol
-cli_writeln("[1/7] Mengaktifkan Web Services & REST Protocol...");
+// 1. Enable Global Web Services, REST protocol, and CBT-friendly password policy
+cli_writeln("[1/7] Mengaktifkan Web Services, REST Protocol, & menonaktifkan Password Policy ketat untuk CBT...");
 set_config('enablewebservices', 1);
 set_config('enablewsdocumentation', 1);
 set_config('webserviceprotocols', 'rest');
+set_config('passwordpolicy', 0);
+set_config('passwordpolicycheckonlogin', 0);
 
 // 2. Configure mod_cbt Default Settings
 cli_writeln("[2/7] Mengonfigurasi parameter default mod_cbt...");

@@ -36,7 +36,7 @@ class manage_groups extends external_api {
 
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
-            'action' => new external_value(PARAM_ALPHANUMEXT, 'Action: list_classes, create_class, create_student, list_students, get_class_students, assign_cohort_members, remove_cohort_member'),
+            'action' => new external_value(PARAM_ALPHANUMEXT, 'Action: list_classes, create_class, create_student, list_students, get_class_students, assign_cohort_members, remove_cohort_member, enroll_students'),
             'payload' => new external_value(PARAM_RAW, 'JSON payload with relevant data', VALUE_DEFAULT, '{}'),
         ]);
     }
@@ -116,6 +116,21 @@ class manage_groups extends external_api {
                     'success' => $ok,
                     'message' => $ok ? 'Anggota berhasil dikeluarkan dari cohort.' : 'Gagal mengeluarkan anggota cohort.',
                     'record_id' => $cohort_id,
+                    'classes' => [],
+                    'students' => [],
+                ];
+
+            case 'enroll_students':
+                \mod_cbt\observer::$suppress_webhook = true;
+                try {
+                    $res = $usecase->enroll_students_to_course_or_cbt($data);
+                } finally {
+                    \mod_cbt\observer::$suppress_webhook = false;
+                }
+                return [
+                    'success' => (bool)($res['success'] ?? false),
+                    'message' => (string)($res['message'] ?? 'Enrollment diproses.'),
+                    'record_id' => (int)($res['enrolled_users'] ?? 0),
                     'classes' => [],
                     'students' => [],
                 ];

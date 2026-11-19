@@ -61,9 +61,12 @@ class import_export_service {
 
         foreach ($rows as $idx => $row) {
             $username = trim($row['nis_username'] ?? $row['username'] ?? $row['nis'] ?? '');
-            $fullname = trim($row['nama_lengkap'] ?? $row['name'] ?? $row['nama'] ?? '');
+            $firstnameCol = trim($row['firstname'] ?? '');
+            $lastnameCol = trim($row['lastname'] ?? '');
+            $fullname = trim($row['nama_lengkap'] ?? $row['name'] ?? $row['nama'] ?? trim($firstnameCol . ' ' . $lastnameCol));
             $password = trim($row['password'] ?? '');
             $class_name = trim($row['cohort'] ?? $row['cohort1'] ?? $row['cohort_idnumber'] ?? $row['kelas'] ?? $row['class'] ?? '');
+            $course_name = trim($row['course1'] ?? $row['course'] ?? $row['mata_pelajaran'] ?? $row['mapel'] ?? '');
             $room_code = trim($row['ruang_ujian'] ?? $row['ruangan'] ?? 'LAB-01');
             $seat_number = trim($row['nomor_meja'] ?? $row['meja'] ?? '');
             $email = trim($row['email'] ?? '');
@@ -73,10 +76,15 @@ class import_export_service {
                 continue;
             }
 
-            // Split firstname and lastname
-            $parts = explode(' ', $fullname, 2);
-            $firstname = $parts[0];
-            $lastname = $parts[1] ?? '-';
+            // Split firstname and lastname (prefer explicit Moodle firstname/lastname columns if provided)
+            if ($firstnameCol !== '') {
+                $firstname = $firstnameCol;
+                $lastname = $lastnameCol !== '' ? $lastnameCol : '-';
+            } else {
+                $parts = explode(' ', $fullname, 2);
+                $firstname = $parts[0];
+                $lastname = $parts[1] ?? '-';
+            }
 
             // Resolve cohort / class ID
             $class_id = 0;
@@ -96,12 +104,24 @@ class import_export_service {
                     'password' => $password !== '' ? $password : $username,
                     'email' => $email !== '' ? $email : ($username . '@cbt.local'),
                     'class_id' => $class_id,
+                    'replace_cohort' => $class_id > 0,
                 ]);
 
                 $user_id = $u_res['user_id'];
 
-                // Assign to CBT roster if cbt_id specified
-                if ($cbt_id > 0 && $seat_number !== '') {
+                // Enrol into Moodle Course or CBT Exam if specified
+                if ($course_name !== '' || $cbt_id > 0) {
+                    $user_mgr->enroll_students_to_course_or_cbt([
+                        'course_name' => $course_name,
+                        'cbt_id' => $cbt_id,
+                        'user_ids' => [$user_id],
+                        'room_code' => $room_code,
+                        'seat_prefix' => $seat_number !== '' ? $seat_number : 'M',
+                    ]);
+                }
+
+                // Assign explicit seat in CBT roster if cbt_id and seat_number specified
+                if ($cbt_id > 0 && $seat_number !== '' && $this->repository !== null) {
                     $this->repository->assign_roster_participant($cbt_id, $user_id, $room_code, $seat_number);
                 }
 
@@ -109,6 +129,10 @@ class import_export_service {
             } catch (\Throwable $e) {
                 $errors[] = "Baris " . ($idx + 2) . " ({$username}): " . $e->getMessage();
             }
+        }
+
+        if ($imported > 0 && class_exists('\mod_cbt\observer')) {
+            \mod_cbt\observer::dispatch('cohort_member', 'added', 0, ['imported_count' => $imported]);
         }
 
         return [

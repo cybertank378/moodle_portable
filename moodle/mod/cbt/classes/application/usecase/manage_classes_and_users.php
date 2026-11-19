@@ -304,6 +304,214 @@ class manage_classes_and_users {
     }
 
     /**
+     * Enrol a Moodle user into a course using the official manual enrolment plugin.
+     *
+     * @param int $userid
+     * @param int $courseid
+     * @param string $roleshortname
+     * @return bool
+     */
+    public function enroll_student_in_course(int $userid, int $courseid, string $roleshortname = 'student'): bool {
+        global $DB, $CFG;
+        if ($userid <= 0 || $courseid <= 1) {
+            return false;
+        }
+        if (!$DB->record_exists('user', ['id' => $userid, 'deleted' => 0]) || !$DB->record_exists('course', ['id' => $courseid])) {
+            return false;
+        }
+
+        require_once($CFG->libdir . '/enrollib.php');
+        $enrol = enrol_get_plugin('manual');
+        if (!$enrol) {
+            return false;
+        }
+
+        $role = $DB->get_record('role', ['shortname' => $roleshortname]);
+        $roleid = $role ? (int)$role->id : 5;
+
+        $instance = $DB->get_record('enrol', ['courseid' => $courseid, 'enrol' => 'manual'], '*', IGNORE_MULTIPLE);
+        if (!$instance) {
+            $course = $DB->get_record('course', ['id' => $courseid]);
+            if (!$course) {
+                return false;
+            }
+            $instanceid = $enrol->add_default_instance($course);
+            if (!$instanceid) {
+                $instanceid = $enrol->add_instance($course, ['status' => ENROL_INSTANCE_ENABLED, 'roleid' => $roleid]);
+            }
+            $instance = $DB->get_record('enrol', ['id' => $instanceid]);
+        }
+
+        if (!$instance) {
+            return false;
+        }
+
+        $enrol->enrol_user($instance, $userid, $roleid);
+        return true;
+    }
+
+    /**
+     * Enrol an entire Moodle Cohort into a course via the official cohort enrolment plugin
+     * and fallback manual enrolment for members if cohort plugin is disabled.
+     *
+     * @param int $cohortid
+     * @param int $courseid
+     * @param string $roleshortname
+     * @return bool
+     */
+    public function enroll_cohort_in_course(int $cohortid, int $courseid, string $roleshortname = 'student'): bool {
+        global $DB, $CFG;
+        if ($cohortid <= 0 || $courseid <= 1) {
+            return false;
+        }
+        $course = $DB->get_record('course', ['id' => $courseid]);
+        if (!$course || !$DB->record_exists('cohort', ['id' => $cohortid])) {
+            return false;
+        }
+
+        require_once($CFG->libdir . '/enrollib.php');
+        $role = $DB->get_record('role', ['shortname' => $roleshortname]);
+        $roleid = $role ? (int)$role->id : 5;
+
+        $cohortplugin = enrol_get_plugin('cohort');
+        if ($cohortplugin) {
+            $existing = $DB->get_record('enrol', [
+                'courseid' => $courseid,
+                'enrol' => 'cohort',
+                'customint1' => $cohortid,
+            ]);
+            if (!$existing) {
+                $cohortplugin->add_instance($course, [
+                    'status' => ENROL_INSTANCE_ENABLED,
+                    'customint1' => $cohortid,
+                    'roleid' => $roleid,
+                    'customint2' => 0,
+                ]);
+            }
+            if (file_exists($CFG->dirroot . '/enrol/cohort/locallib.php')) {
+                require_once($CFG->dirroot . '/enrol/cohort/locallib.php');
+                if (function_exists('enrol_cohort_sync')) {
+                    $trace = new \null_progress_trace();
+                    enrol_cohort_sync($trace, $courseid);
+                }
+            }
+            return true;
+        }
+
+        // Fallback: enrol each cohort member manually
+        $members = $DB->get_records('cohort_members', ['cohortid' => $cohortid], '', 'userid');
+        foreach ($members as $m) {
+            $this->enroll_student_in_course((int)$m->userid, $courseid, $roleshortname);
+        }
+        return true;
+    }
+
+    /**
+     * Enrol students and/or cohorts into a Moodle Course and optional CBT Exam roster.
+     *
+     * @param array $data [
+     *   'course_id' => int,
+     *   'course_name' => string,
+     *   'cbt_id' => int,
+     *   'cohort_ids' => int[],
+     *   'user_ids' => int[],
+     *   'room_code' => string,
+     *   'seat_prefix' => string
+     * ]
+     * @return array
+     */
+    public function enroll_students_to_course_or_cbt(array $data): array {
+        global $DB;
+
+        $courseid = (int)($data['course_id'] ?? 0);
+        $coursename = trim((string)($data['course_name'] ?? ''));
+        $cbtid = (int)($data['cbt_id'] ?? 0);
+        $cohortids = is_array($data['cohort_ids'] ?? null) ? $data['cohort_ids'] : [];
+        $userids = is_array($data['user_ids'] ?? null) ? $data['user_ids'] : [];
+        $roomcode = trim((string)($data['room_code'] ?? 'LAB-01')) ?: 'LAB-01';
+        $seatprefix = trim((string)($data['seat_prefix'] ?? 'M')) ?: 'M';
+
+        if ($courseid <= 1 && $cbtid > 0 && $DB->get_manager()->table_exists('cbt')) {
+            try {
+                $cbt = $DB->get_record('cbt', ['id' => $cbtid], 'id, course');
+                if ($cbt && (int)$cbt->course > 1) {
+                    $courseid = (int)$cbt->course;
+                }
+            } catch (\Throwable $e) {
+                debugging('Failed to resolve course from cbt_id: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+
+        if ($courseid <= 1 && $coursename !== '') {
+            $course = $DB->get_record('course', ['fullname' => $coursename], 'id')
+                ?: $DB->get_record('course', ['shortname' => $coursename], 'id');
+            if ($course && (int)$course->id > 1) {
+                $courseid = (int)$course->id;
+            }
+        }
+
+        $alluserids = [];
+        foreach ($userids as $uid) {
+            $id = (int)$uid;
+            if ($id > 0) {
+                $alluserids[$id] = true;
+            }
+        }
+
+        $enrolledcohorts = 0;
+        foreach ($cohortids as $cid) {
+            $cohortid = (int)$cid;
+            if ($cohortid <= 0) {
+                continue;
+            }
+            if ($courseid > 1) {
+                if ($this->enroll_cohort_in_course($cohortid, $courseid)) {
+                    $enrolledcohorts++;
+                }
+            }
+            $members = $DB->get_records('cohort_members', ['cohortid' => $cohortid], '', 'userid');
+            foreach ($members as $m) {
+                $alluserids[(int)$m->userid] = true;
+            }
+        }
+
+        $enrolledusers = 0;
+        $rosterrepo = null;
+        if ($cbtid > 0 && class_exists('mod_cbt\\infrastructure\\persistence\\db_attempt_repository')) {
+            $rosterrepo = new \mod_cbt\infrastructure\persistence\db_attempt_repository();
+        }
+
+        $seatidx = 1;
+        foreach (array_keys($alluserids) as $uid) {
+            if ($courseid > 1) {
+                if ($this->enroll_student_in_course($uid, $courseid)) {
+                    $enrolledusers++;
+                }
+            } else {
+                $enrolledusers++;
+            }
+
+            if ($rosterrepo !== null && $cbtid > 0) {
+                try {
+                    $seat = $seatprefix . '-' . str_pad((string)$seatidx, 2, '0', STR_PAD_LEFT);
+                    $rosterrepo->assign_roster_participant($cbtid, $uid, $roomcode, $seat);
+                } catch (\Throwable $e) {
+                    debugging('Roster assign skipped: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
+            }
+            $seatidx++;
+        }
+
+        return [
+            'success' => true,
+            'course_id' => $courseid,
+            'enrolled_users' => $enrolledusers,
+            'enrolled_cohorts' => $enrolledcohorts,
+            'message' => "Berhasil mendaftarkan {$enrolledusers} siswa ({$enrolledcohorts} cohort) ke course/ujian.",
+        ];
+    }
+
+    /**
      * Get all students in a classroom/cohort, or all students if cohortid <= 0.
      *
      * @param int $cohortid
