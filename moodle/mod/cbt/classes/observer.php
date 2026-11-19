@@ -105,6 +105,14 @@ class observer {
         self::dispatch('question', $action, (int)$event->objectid);
     }
 
+    public static function on_user_enrolment_changed(\core\event\base $event): void {
+        $enrolAction = str_contains($event->eventname, 'deleted') ? 'deleted' : 'created';
+        self::dispatch('user', 'updated', (int)($event->relateduserid ?: $event->objectid), [
+            'courseid' => (int)($event->courseid ?? 0),
+            'enrolment_action' => $enrolAction,
+        ]);
+    }
+
     /**
      * Dispatch a fast, non-blocking HTTP POST webhook to Aksaventra CBT.
      */
