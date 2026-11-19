@@ -36,7 +36,7 @@ class manage_groups extends external_api {
 
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
-            'action' => new external_value(PARAM_ALPHANUMEXT, 'Action: list_classes, create_class, create_student, get_class_students'),
+            'action' => new external_value(PARAM_ALPHANUMEXT, 'Action: list_classes, create_class, create_student, list_students, get_class_students, assign_cohort_members, remove_cohort_member'),
             'payload' => new external_value(PARAM_RAW, 'JSON payload with relevant data', VALUE_DEFAULT, '{}'),
         ]);
     }
@@ -52,11 +52,16 @@ class manage_groups extends external_api {
 
         switch ($params['action']) {
             case 'create_class':
-                $name = (string)($data['name'] ?? '');
-                $code = (string)($data['code'] ?? '');
-                $desc = (string)($data['description'] ?? '');
-                $moodle_id = (int)($data['moodle_id'] ?? 0);
-                $res = $usecase->create_class_group($name, $code, $desc, $moodle_id);
+                \mod_cbt\observer::$suppress_webhook = true;
+                try {
+                    $name = (string)($data['name'] ?? '');
+                    $code = (string)($data['code'] ?? '');
+                    $desc = (string)($data['description'] ?? '');
+                    $moodle_id = (int)($data['moodle_id'] ?? 0);
+                    $res = $usecase->create_class_group($name, $code, $desc, $moodle_id);
+                } finally {
+                    \mod_cbt\observer::$suppress_webhook = false;
+                }
                 return [
                     'success' => $res['success'],
                     'message' => $res['message'],
@@ -66,11 +71,51 @@ class manage_groups extends external_api {
                 ];
 
             case 'create_student':
-                $res = $usecase->create_or_update_student($data);
+                \mod_cbt\observer::$suppress_webhook = true;
+                try {
+                    $res = $usecase->create_or_update_student($data);
+                } finally {
+                    \mod_cbt\observer::$suppress_webhook = false;
+                }
                 return [
                     'success' => $res['success'],
                     'message' => $res['message'],
                     'record_id' => (int)($res['user_id'] ?? 0),
+                    'classes' => [],
+                    'students' => [],
+                ];
+
+            case 'assign_cohort_members':
+                \mod_cbt\observer::$suppress_webhook = true;
+                try {
+                    $cohort_id = (int)($data['cohort_id'] ?? $data['class_id'] ?? 0);
+                    $user_ids = is_array($data['user_ids'] ?? null) ? $data['user_ids'] : [];
+                    $replace = !isset($data['replace_cohort']) || !empty($data['replace_cohort']);
+                    $processed = $usecase->bulk_assign_cohort($user_ids, $cohort_id, $replace);
+                } finally {
+                    \mod_cbt\observer::$suppress_webhook = false;
+                }
+                return [
+                    'success' => true,
+                    'message' => "{$processed} anggota cohort berhasil diperbarui.",
+                    'record_id' => $cohort_id,
+                    'classes' => [],
+                    'students' => [],
+                ];
+
+            case 'remove_cohort_member':
+                \mod_cbt\observer::$suppress_webhook = true;
+                try {
+                    $cohort_id = (int)($data['cohort_id'] ?? $data['class_id'] ?? 0);
+                    $user_id = (int)($data['user_id'] ?? 0);
+                    $ok = $usecase->remove_member_from_cohort($cohort_id, $user_id);
+                } finally {
+                    \mod_cbt\observer::$suppress_webhook = false;
+                }
+                return [
+                    'success' => $ok,
+                    'message' => $ok ? 'Anggota berhasil dikeluarkan dari cohort.' : 'Gagal mengeluarkan anggota cohort.',
+                    'record_id' => $cohort_id,
                     'classes' => [],
                     'students' => [],
                 ];

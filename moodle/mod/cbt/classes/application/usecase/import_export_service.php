@@ -63,7 +63,7 @@ class import_export_service {
             $username = trim($row['nis_username'] ?? $row['username'] ?? $row['nis'] ?? '');
             $fullname = trim($row['nama_lengkap'] ?? $row['name'] ?? $row['nama'] ?? '');
             $password = trim($row['password'] ?? '');
-            $class_name = trim($row['kelas'] ?? $row['class'] ?? '');
+            $class_name = trim($row['cohort'] ?? $row['cohort1'] ?? $row['cohort_idnumber'] ?? $row['kelas'] ?? $row['class'] ?? '');
             $room_code = trim($row['ruang_ujian'] ?? $row['ruangan'] ?? 'LAB-01');
             $seat_number = trim($row['nomor_meja'] ?? $row['meja'] ?? '');
             $email = trim($row['email'] ?? '');
