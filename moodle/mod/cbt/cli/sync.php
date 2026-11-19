@@ -81,6 +81,38 @@ try {
 
     // Ensure core Prisma tables exist if not yet migrated
     $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `Subject` (
+            `id` VARCHAR(191) NOT NULL PRIMARY KEY,
+            `moodleCourseId` INT NULL UNIQUE,
+            `name` VARCHAR(191) NOT NULL UNIQUE,
+            `shortName` VARCHAR(191) NULL,
+            `description` VARCHAR(191) NULL,
+            `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+            `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `Question` (
+            `id` VARCHAR(191) NOT NULL PRIMARY KEY,
+            `moodleQuestionId` INT NULL UNIQUE,
+            `code` VARCHAR(191) NOT NULL UNIQUE,
+            `subject` VARCHAR(191) NOT NULL,
+            `gradeLevel` VARCHAR(191) NOT NULL,
+            `type` VARCHAR(191) NOT NULL,
+            `stem` TEXT NOT NULL,
+            `imageUrl` VARCHAR(191) NULL,
+            `points` DOUBLE NOT NULL DEFAULT 1,
+            `tolerance` DOUBLE NULL,
+            `optionsJson` JSON NOT NULL,
+            `explanation` TEXT NULL,
+            `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+            `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+            INDEX `Question_subject_gradeLevel_idx` (`subject`, `gradeLevel`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    ");
+
+    $pdo->exec("
         CREATE TABLE IF NOT EXISTS `ClassGroup` (
             `id` VARCHAR(191) NOT NULL PRIMARY KEY,
             `moodleId` INT NULL UNIQUE,
@@ -172,6 +204,29 @@ try {
             CONSTRAINT `ViolationLog_attemptId_fkey` FOREIGN KEY (`attemptId`) REFERENCES `Attempt` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     ");
+
+    // 0. SINKRONISASI MATA PELAJARAN (COURSE -> Subject)
+    $courses = $DB->get_records_select('course', 'id > 1 AND visible = 1', null, 'fullname ASC', 'id, fullname, shortname, summary');
+    $stmt_sub_select = $pdo->prepare("SELECT id FROM `Subject` WHERE `moodleCourseId` = ? OR `name` = ? LIMIT 1");
+    $stmt_sub_update = $pdo->prepare("UPDATE `Subject` SET `moodleCourseId` = ?, `name` = ?, `shortName` = ?, `description` = ?, `updatedAt` = NOW(3) WHERE `id` = ?");
+    $stmt_sub_insert = $pdo->prepare("INSERT INTO `Subject` (`id`, `moodleCourseId`, `name`, `shortName`, `description`, `createdAt`, `updatedAt`) VALUES (?, ?, ?, ?, ?, NOW(3), NOW(3))");
+
+    foreach ($courses as $course) {
+        $cname = trim($course->fullname);
+        if ($cname === '') {
+            continue;
+        }
+        $cshort = trim((string)($course->shortname ?? '')) ?: null;
+        $cdesc = mb_substr(trim(strip_tags((string)($course->summary ?? ''))), 0, 190) ?: null;
+
+        $stmt_sub_select->execute([(int)$course->id, $cname]);
+        $srow = $stmt_sub_select->fetch();
+        if ($srow) {
+            $stmt_sub_update->execute([(int)$course->id, $cname, $cshort, $cdesc, $srow['id']]);
+        } else {
+            $stmt_sub_insert->execute([generate_uuid_v4(), (int)$course->id, $cname, $cshort, $cdesc]);
+        }
+    }
 
     // 1. SINKRONISASI KELAS (COHORT)
     $cohorts = $DB->get_records('cohort', null, 'name ASC', 'id, name, idnumber, description');
