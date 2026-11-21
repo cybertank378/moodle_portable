@@ -17,7 +17,7 @@
 /**
  * Direct High-Performance Database Synchronization Bridge for Aksaventra CBT.
  * Synchronizes Moodle classes (cohorts), students (mdl_user), and CBT exams (mdl_cbt)
- * directly into the MariaDB aksaventra_cbt database used by Next.js.
+ * directly into the MariaDB / MySQL or PostgreSQL aksaventra_cbt database used by Next.js.
  *
  * @package    mod_cbt
  * @copyright  2026 Aksaventra
@@ -59,157 +59,334 @@ function generate_uuid_v4(): string {
 }
 
 try {
-    $dbhost = !empty($CFG->dbhost) ? $CFG->dbhost : '127.0.0.1';
-    $dbport = !empty($CFG->dboptions['dbport']) ? (int)$CFG->dboptions['dbport'] : 3306;
-    $dbuser = !empty($CFG->dbuser) ? $CFG->dbuser : 'root';
-    $dbpass = isset($CFG->dbpass) ? $CFG->dbpass : '';
+    $cbt_driver = getenv('CBT_DB_DRIVER') ?: (!empty($CFG->dbtype) ? $CFG->dbtype : 'mariadb');
+    $is_pgsql = in_array(strtolower(trim((string)$cbt_driver)), ['pgsql', 'postgres', 'postgresql'], true);
 
-    $dsn_server = "mysql:host={$dbhost};port={$dbport};charset=utf8mb4";
-    $pdo_server = new PDO($dsn_server, $dbuser, $dbpass, [
+    $dbhost = getenv('CBT_DB_HOST') ?: (!empty($CFG->dbhost) ? $CFG->dbhost : '127.0.0.1');
+    $default_port = $is_pgsql ? 5432 : 3306;
+    $dbport = getenv('CBT_DB_PORT')
+        ? (int)getenv('CBT_DB_PORT')
+        : (!empty($CFG->dboptions['dbport']) ? (int)$CFG->dboptions['dbport'] : $default_port);
+    $dbuser = getenv('CBT_DB_USER') ?: (!empty($CFG->dbuser) ? $CFG->dbuser : ($is_pgsql ? 'postgres' : 'root'));
+    $dbpass = getenv('CBT_DB_PASS') !== false ? getenv('CBT_DB_PASS') : (isset($CFG->dbpass) ? $CFG->dbpass : '');
+    $cbt_dbname = getenv('CBT_DB_NAME') ?: 'aksaventra_cbt';
+
+    $pdo_opts = [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    ]);
+    ];
 
-    // Ensure database aksaventra_cbt exists
-    $pdo_server->exec("CREATE DATABASE IF NOT EXISTS `aksaventra_cbt` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    if ($is_pgsql) {
+        $maint_db = !empty($CFG->dbname) ? $CFG->dbname : 'postgres';
+        $pdo_server = new PDO("pgsql:host={$dbhost};port={$dbport};dbname={$maint_db}", $dbuser, $dbpass, $pdo_opts);
 
-    $dsn_cbt = "mysql:host={$dbhost};port={$dbport};dbname=aksaventra_cbt;charset=utf8mb4";
-    $pdo = new PDO($dsn_cbt, $dbuser, $dbpass, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    ]);
+        $stmt_check_db = $pdo_server->prepare("SELECT 1 FROM pg_database WHERE datname = ?");
+        $stmt_check_db->execute([$cbt_dbname]);
+        if (!$stmt_check_db->fetch()) {
+            $safe_dbname = str_replace('"', '""', $cbt_dbname);
+            $pdo_server->exec("CREATE DATABASE \"{$safe_dbname}\" ENCODING 'UTF8'");
+        }
 
-    // Ensure core Prisma tables exist if not yet migrated
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `Subject` (
-            `id` VARCHAR(191) NOT NULL PRIMARY KEY,
-            `moodleCourseId` INT NULL UNIQUE,
-            `name` VARCHAR(191) NOT NULL UNIQUE,
-            `shortName` VARCHAR(191) NULL,
-            `description` VARCHAR(191) NULL,
-            `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-            `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    ");
+        $pdo = new PDO("pgsql:host={$dbhost};port={$dbport};dbname={$cbt_dbname}", $dbuser, $dbpass, $pdo_opts);
 
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `Question` (
-            `id` VARCHAR(191) NOT NULL PRIMARY KEY,
-            `moodleQuestionId` INT NULL UNIQUE,
-            `code` VARCHAR(191) NOT NULL UNIQUE,
-            `subject` VARCHAR(191) NOT NULL,
-            `gradeLevel` VARCHAR(191) NOT NULL,
-            `type` VARCHAR(191) NOT NULL,
-            `stem` TEXT NOT NULL,
-            `imageUrl` VARCHAR(191) NULL,
-            `points` DOUBLE NOT NULL DEFAULT 1,
-            `tolerance` DOUBLE NULL,
-            `optionsJson` JSON NOT NULL,
-            `explanation` TEXT NULL,
-            `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-            `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-            INDEX `Question_subject_gradeLevel_idx` (`subject`, `gradeLevel`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    ");
+        // Ensure PostgreSQL enums and Prisma tables exist if not yet migrated
+        $pdo->exec("
+            DO \$\$ BEGIN
+                CREATE TYPE \"UserRole\" AS ENUM ('ADMIN', 'TEACHER', 'PROCTOR', 'STUDENT');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END \$\$;
+        ");
+        $pdo->exec("
+            DO \$\$ BEGIN
+                CREATE TYPE \"AttemptStatus\" AS ENUM ('IN_PROGRESS', 'LOCKED', 'SUBMITTED', 'ABANDONED');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END \$\$;
+        ");
+        $pdo->exec("
+            DO \$\$ BEGIN
+                CREATE TYPE \"ViolationEventType\" AS ENUM ('TAB_BLUR', 'FULLSCREEN_EXIT', 'DEVTOOLS_OPEN', 'PROCTOR_UNLOCK', 'PROCTOR_RESET_DEVICE', 'TIME_EXTEND', 'FORCE_SUBMIT');
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END \$\$;
+        ");
 
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `ClassGroup` (
-            `id` VARCHAR(191) NOT NULL PRIMARY KEY,
-            `moodleId` INT NULL UNIQUE,
-            `name` VARCHAR(191) NOT NULL UNIQUE,
-            `code` VARCHAR(191) NULL,
-            `description` TEXT NULL,
-            `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-            `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    ");
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS \"Subject\" (
+                \"id\" VARCHAR(191) NOT NULL PRIMARY KEY,
+                \"moodleCourseId\" INTEGER NULL UNIQUE,
+                \"name\" VARCHAR(191) NOT NULL UNIQUE,
+                \"shortName\" VARCHAR(191) NULL,
+                \"description\" VARCHAR(191) NULL,
+                \"createdAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                \"updatedAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+            );
+        ");
 
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `User` (
-            `id` VARCHAR(191) NOT NULL PRIMARY KEY,
-            `moodleUserId` INT NULL UNIQUE,
-            `username` VARCHAR(191) NOT NULL UNIQUE,
-            `fullName` VARCHAR(191) NOT NULL,
-            `passwordHash` VARCHAR(191) NOT NULL,
-            `role` ENUM('ADMIN', 'TEACHER', 'PROCTOR', 'STUDENT') NOT NULL DEFAULT 'STUDENT',
-            `className` VARCHAR(191) NULL,
-            `classGroupId` VARCHAR(191) NULL,
-            `roomCode` VARCHAR(191) NULL,
-            `isActive` TINYINT(1) NOT NULL DEFAULT 1,
-            `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-            `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-            INDEX `User_role_roomCode_idx` (`role`, `roomCode`),
-            CONSTRAINT `User_classGroupId_fkey` FOREIGN KEY (`classGroupId`) REFERENCES `ClassGroup` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    ");
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS \"Question\" (
+                \"id\" VARCHAR(191) NOT NULL PRIMARY KEY,
+                \"moodleQuestionId\" INTEGER NULL UNIQUE,
+                \"code\" VARCHAR(191) NOT NULL UNIQUE,
+                \"subject\" VARCHAR(191) NOT NULL,
+                \"gradeLevel\" VARCHAR(191) NOT NULL,
+                \"type\" VARCHAR(191) NOT NULL,
+                \"stem\" TEXT NOT NULL,
+                \"imageUrl\" VARCHAR(191) NULL,
+                \"points\" DOUBLE PRECISION NOT NULL DEFAULT 1,
+                \"tolerance\" DOUBLE PRECISION NULL,
+                \"optionsJson\" JSONB NOT NULL,
+                \"explanation\" TEXT NULL,
+                \"createdAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                \"updatedAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+            );
+            CREATE INDEX IF NOT EXISTS \"Question_subject_gradeLevel_idx\" ON \"Question\" (\"subject\", \"gradeLevel\");
+        ");
 
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `Exam` (
-            `id` VARCHAR(191) NOT NULL PRIMARY KEY,
-            `moodleCbtId` INT NOT NULL UNIQUE,
-            `title` VARCHAR(191) NOT NULL,
-            `courseName` VARCHAR(191) NOT NULL,
-            `durationSeconds` INT NOT NULL DEFAULT 7200,
-            `maxStrikes` INT NOT NULL DEFAULT 3,
-            `sebRequired` TINYINT(1) NOT NULL DEFAULT 0,
-            `sebConfigKey` VARCHAR(191) NULL,
-            `activeToken` VARCHAR(10) NOT NULL,
-            `tokenExpiresAt` DATETIME(3) NOT NULL,
-            `snapshotHash` VARCHAR(191) NULL,
-            `questionsJson` JSON NOT NULL,
-            `answerKeysJson` JSON NOT NULL,
-            `timeOpen` DATETIME(3) NOT NULL,
-            `timeClose` DATETIME(3) NOT NULL,
-            `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-            `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    ");
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS \"ClassGroup\" (
+                \"id\" VARCHAR(191) NOT NULL PRIMARY KEY,
+                \"moodleId\" INTEGER NULL UNIQUE,
+                \"name\" VARCHAR(191) NOT NULL UNIQUE,
+                \"code\" VARCHAR(191) NULL,
+                \"description\" TEXT NULL,
+                \"createdAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                \"updatedAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+            );
+        ");
 
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `Attempt` (
-            `id` VARCHAR(191) NOT NULL PRIMARY KEY,
-            `moodleAttemptId` INT NULL UNIQUE,
-            `examId` VARCHAR(191) NOT NULL,
-            `userId` VARCHAR(191) NOT NULL,
-            `status` ENUM('IN_PROGRESS', 'LOCKED', 'SUBMITTED', 'ABANDONED') NOT NULL DEFAULT 'IN_PROGRESS',
-            `startedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-            `finishedAt` DATETIME(3) NULL,
-            `extraTimeSeconds` INT NOT NULL DEFAULT 0,
-            `strikeCount` INT NOT NULL DEFAULT 0,
-            `deviceHash` VARCHAR(128) NOT NULL,
-            `ipAddress` VARCHAR(45) NOT NULL,
-            `questionOrder` JSON NOT NULL,
-            `answersJson` JSON NOT NULL,
-            `syncVersion` INT NOT NULL DEFAULT 0,
-            `finalScore` DOUBLE NULL,
-            `syncedToMoodle` TINYINT(1) NOT NULL DEFAULT 0,
-            `lastHeartbeatAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-            `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-            `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-            UNIQUE KEY `Attempt_examId_userId_key` (`examId`, `userId`),
-            INDEX `Attempt_examId_status_idx` (`examId`, `status`),
-            CONSTRAINT `Attempt_examId_fkey` FOREIGN KEY (`examId`) REFERENCES `Exam` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-            CONSTRAINT `Attempt_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    ");
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS \"User\" (
+                \"id\" VARCHAR(191) NOT NULL PRIMARY KEY,
+                \"moodleUserId\" INTEGER NULL UNIQUE,
+                \"username\" VARCHAR(191) NOT NULL UNIQUE,
+                \"fullName\" VARCHAR(191) NOT NULL,
+                \"passwordHash\" VARCHAR(191) NOT NULL,
+                \"role\" \"UserRole\" NOT NULL DEFAULT 'STUDENT',
+                \"className\" VARCHAR(191) NULL,
+                \"classGroupId\" VARCHAR(191) NULL,
+                \"roomCode\" VARCHAR(191) NULL,
+                \"isActive\" BOOLEAN NOT NULL DEFAULT TRUE,
+                \"createdAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                \"updatedAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                CONSTRAINT \"User_classGroupId_fkey\" FOREIGN KEY (\"classGroupId\") REFERENCES \"ClassGroup\" (\"id\") ON DELETE SET NULL ON UPDATE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS \"User_role_roomCode_idx\" ON \"User\" (\"role\", \"roomCode\");
+        ");
 
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `ViolationLog` (
-            `id` VARCHAR(191) NOT NULL PRIMARY KEY,
-            `attemptId` VARCHAR(191) NOT NULL,
-            `eventType` ENUM('TAB_BLUR', 'FULLSCREEN_EXIT', 'DEVTOOLS_OPEN', 'PROCTOR_UNLOCK', 'PROCTOR_RESET_DEVICE', 'TIME_EXTEND', 'FORCE_SUBMIT') NOT NULL,
-            `details` JSON NULL,
-            `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-            INDEX `ViolationLog_attemptId_createdAt_idx` (`attemptId`, `createdAt`),
-            CONSTRAINT `ViolationLog_attemptId_fkey` FOREIGN KEY (`attemptId`) REFERENCES `Attempt` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    ");
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS \"Exam\" (
+                \"id\" VARCHAR(191) NOT NULL PRIMARY KEY,
+                \"moodleCbtId\" INTEGER NOT NULL UNIQUE,
+                \"title\" VARCHAR(191) NOT NULL,
+                \"courseName\" VARCHAR(191) NOT NULL,
+                \"durationSeconds\" INTEGER NOT NULL DEFAULT 7200,
+                \"maxStrikes\" INTEGER NOT NULL DEFAULT 3,
+                \"sebRequired\" BOOLEAN NOT NULL DEFAULT FALSE,
+                \"sebConfigKey\" VARCHAR(191) NULL,
+                \"activeToken\" VARCHAR(10) NOT NULL,
+                \"tokenExpiresAt\" TIMESTAMP(3) NOT NULL,
+                \"snapshotHash\" VARCHAR(191) NULL,
+                \"questionsJson\" JSONB NOT NULL,
+                \"answerKeysJson\" JSONB NOT NULL,
+                \"timeOpen\" TIMESTAMP(3) NOT NULL,
+                \"timeClose\" TIMESTAMP(3) NOT NULL,
+                \"createdAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                \"updatedAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+            );
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS \"Attempt\" (
+                \"id\" VARCHAR(191) NOT NULL PRIMARY KEY,
+                \"moodleAttemptId\" INTEGER NULL UNIQUE,
+                \"examId\" VARCHAR(191) NOT NULL,
+                \"userId\" VARCHAR(191) NOT NULL,
+                \"status\" \"AttemptStatus\" NOT NULL DEFAULT 'IN_PROGRESS',
+                \"startedAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                \"finishedAt\" TIMESTAMP(3) NULL,
+                \"extraTimeSeconds\" INTEGER NOT NULL DEFAULT 0,
+                \"strikeCount\" INTEGER NOT NULL DEFAULT 0,
+                \"deviceHash\" VARCHAR(128) NOT NULL,
+                \"ipAddress\" VARCHAR(45) NOT NULL,
+                \"questionOrder\" JSONB NOT NULL,
+                \"answersJson\" JSONB NOT NULL,
+                \"syncVersion\" INTEGER NOT NULL DEFAULT 0,
+                \"finalScore\" DOUBLE PRECISION NULL,
+                \"syncedToMoodle\" BOOLEAN NOT NULL DEFAULT FALSE,
+                \"lastHeartbeatAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                \"createdAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                \"updatedAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                CONSTRAINT \"Attempt_examId_userId_key\" UNIQUE (\"examId\", \"userId\"),
+                CONSTRAINT \"Attempt_examId_fkey\" FOREIGN KEY (\"examId\") REFERENCES \"Exam\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT \"Attempt_userId_fkey\" FOREIGN KEY (\"userId\") REFERENCES \"User\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS \"Attempt_examId_status_idx\" ON \"Attempt\" (\"examId\", \"status\");
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS \"ViolationLog\" (
+                \"id\" VARCHAR(191) NOT NULL PRIMARY KEY,
+                \"attemptId\" VARCHAR(191) NOT NULL,
+                \"eventType\" \"ViolationEventType\" NOT NULL,
+                \"details\" JSONB NULL,
+                \"createdAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                CONSTRAINT \"ViolationLog_attemptId_fkey\" FOREIGN KEY (\"attemptId\") REFERENCES \"Attempt\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS \"ViolationLog_attemptId_createdAt_idx\" ON \"ViolationLog\" (\"attemptId\", \"createdAt\");
+        ");
+    } else {
+        $dsn_server = "mysql:host={$dbhost};port={$dbport};charset=utf8mb4";
+        $pdo_server = new PDO($dsn_server, $dbuser, $dbpass, $pdo_opts);
+
+        // Ensure database aksaventra_cbt exists
+        $safe_dbname = str_replace('`', '``', $cbt_dbname);
+        $pdo_server->exec("CREATE DATABASE IF NOT EXISTS `{$safe_dbname}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+
+        $dsn_cbt = "mysql:host={$dbhost};port={$dbport};dbname={$cbt_dbname};charset=utf8mb4";
+        $pdo = new PDO($dsn_cbt, $dbuser, $dbpass, $pdo_opts);
+
+        // Ensure core Prisma tables exist if not yet migrated
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `Subject` (
+                `id` VARCHAR(191) NOT NULL PRIMARY KEY,
+                `moodleCourseId` INT NULL UNIQUE,
+                `name` VARCHAR(191) NOT NULL UNIQUE,
+                `shortName` VARCHAR(191) NULL,
+                `description` VARCHAR(191) NULL,
+                `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `Question` (
+                `id` VARCHAR(191) NOT NULL PRIMARY KEY,
+                `moodleQuestionId` INT NULL UNIQUE,
+                `code` VARCHAR(191) NOT NULL UNIQUE,
+                `subject` VARCHAR(191) NOT NULL,
+                `gradeLevel` VARCHAR(191) NOT NULL,
+                `type` VARCHAR(191) NOT NULL,
+                `stem` TEXT NOT NULL,
+                `imageUrl` VARCHAR(191) NULL,
+                `points` DOUBLE NOT NULL DEFAULT 1,
+                `tolerance` DOUBLE NULL,
+                `optionsJson` JSON NOT NULL,
+                `explanation` TEXT NULL,
+                `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+                INDEX `Question_subject_gradeLevel_idx` (`subject`, `gradeLevel`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `ClassGroup` (
+                `id` VARCHAR(191) NOT NULL PRIMARY KEY,
+                `moodleId` INT NULL UNIQUE,
+                `name` VARCHAR(191) NOT NULL UNIQUE,
+                `code` VARCHAR(191) NULL,
+                `description` TEXT NULL,
+                `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `User` (
+                `id` VARCHAR(191) NOT NULL PRIMARY KEY,
+                `moodleUserId` INT NULL UNIQUE,
+                `username` VARCHAR(191) NOT NULL UNIQUE,
+                `fullName` VARCHAR(191) NOT NULL,
+                `passwordHash` VARCHAR(191) NOT NULL,
+                `role` ENUM('ADMIN', 'TEACHER', 'PROCTOR', 'STUDENT') NOT NULL DEFAULT 'STUDENT',
+                `className` VARCHAR(191) NULL,
+                `classGroupId` VARCHAR(191) NULL,
+                `roomCode` VARCHAR(191) NULL,
+                `isActive` TINYINT(1) NOT NULL DEFAULT 1,
+                `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+                INDEX `User_role_roomCode_idx` (`role`, `roomCode`),
+                CONSTRAINT `User_classGroupId_fkey` FOREIGN KEY (`classGroupId`) REFERENCES `ClassGroup` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `Exam` (
+                `id` VARCHAR(191) NOT NULL PRIMARY KEY,
+                `moodleCbtId` INT NOT NULL UNIQUE,
+                `title` VARCHAR(191) NOT NULL,
+                `courseName` VARCHAR(191) NOT NULL,
+                `durationSeconds` INT NOT NULL DEFAULT 7200,
+                `maxStrikes` INT NOT NULL DEFAULT 3,
+                `sebRequired` TINYINT(1) NOT NULL DEFAULT 0,
+                `sebConfigKey` VARCHAR(191) NULL,
+                `activeToken` VARCHAR(10) NOT NULL,
+                `tokenExpiresAt` DATETIME(3) NOT NULL,
+                `snapshotHash` VARCHAR(191) NULL,
+                `questionsJson` JSON NOT NULL,
+                `answerKeysJson` JSON NOT NULL,
+                `timeOpen` DATETIME(3) NOT NULL,
+                `timeClose` DATETIME(3) NOT NULL,
+                `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `Attempt` (
+                `id` VARCHAR(191) NOT NULL PRIMARY KEY,
+                `moodleAttemptId` INT NULL UNIQUE,
+                `examId` VARCHAR(191) NOT NULL,
+                `userId` VARCHAR(191) NOT NULL,
+                `status` ENUM('IN_PROGRESS', 'LOCKED', 'SUBMITTED', 'ABANDONED') NOT NULL DEFAULT 'IN_PROGRESS',
+                `startedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                `finishedAt` DATETIME(3) NULL,
+                `extraTimeSeconds` INT NOT NULL DEFAULT 0,
+                `strikeCount` INT NOT NULL DEFAULT 0,
+                `deviceHash` VARCHAR(128) NOT NULL,
+                `ipAddress` VARCHAR(45) NOT NULL,
+                `questionOrder` JSON NOT NULL,
+                `answersJson` JSON NOT NULL,
+                `syncVersion` INT NOT NULL DEFAULT 0,
+                `finalScore` DOUBLE NULL,
+                `syncedToMoodle` TINYINT(1) NOT NULL DEFAULT 0,
+                `lastHeartbeatAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+                UNIQUE KEY `Attempt_examId_userId_key` (`examId`, `userId`),
+                INDEX `Attempt_examId_status_idx` (`examId`, `status`),
+                CONSTRAINT `Attempt_examId_fkey` FOREIGN KEY (`examId`) REFERENCES `Exam` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT `Attempt_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `ViolationLog` (
+                `id` VARCHAR(191) NOT NULL PRIMARY KEY,
+                `attemptId` VARCHAR(191) NOT NULL,
+                `eventType` ENUM('TAB_BLUR', 'FULLSCREEN_EXIT', 'DEVTOOLS_OPEN', 'PROCTOR_UNLOCK', 'PROCTOR_RESET_DEVICE', 'TIME_EXTEND', 'FORCE_SUBMIT') NOT NULL,
+                `details` JSON NULL,
+                `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                INDEX `ViolationLog_attemptId_createdAt_idx` (`attemptId`, `createdAt`),
+                CONSTRAINT `ViolationLog_attemptId_fkey` FOREIGN KEY (`attemptId`) REFERENCES `Attempt` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+    }
+
+    // Cross-database SQL prepare helper (converts MySQL backticks and NOW(3) for PostgreSQL)
+    $prepare_sql = function (string $sql) use ($pdo, $is_pgsql): PDOStatement {
+        if ($is_pgsql) {
+            $sql = str_replace(['`', 'NOW(3)'], ['"', 'CURRENT_TIMESTAMP(3)'], $sql);
+        }
+        return $pdo->prepare($sql);
+    };
 
     // 0. SINKRONISASI MATA PELAJARAN (COURSE -> Subject)
     $courses = $DB->get_records_select('course', 'id > 1 AND visible = 1', null, 'fullname ASC', 'id, fullname, shortname, summary');
-    $stmt_sub_select = $pdo->prepare("SELECT id FROM `Subject` WHERE `moodleCourseId` = ? OR `name` = ? LIMIT 1");
-    $stmt_sub_update = $pdo->prepare("UPDATE `Subject` SET `moodleCourseId` = ?, `name` = ?, `shortName` = ?, `description` = ?, `updatedAt` = NOW(3) WHERE `id` = ?");
-    $stmt_sub_insert = $pdo->prepare("INSERT INTO `Subject` (`id`, `moodleCourseId`, `name`, `shortName`, `description`, `createdAt`, `updatedAt`) VALUES (?, ?, ?, ?, ?, NOW(3), NOW(3))");
+    $stmt_sub_select = $prepare_sql("SELECT `id` FROM `Subject` WHERE `moodleCourseId` = ? OR `name` = ? LIMIT 1");
+    $stmt_sub_update = $prepare_sql("UPDATE `Subject` SET `moodleCourseId` = ?, `name` = ?, `shortName` = ?, `description` = ?, `updatedAt` = NOW(3) WHERE `id` = ?");
+    $stmt_sub_insert = $prepare_sql("INSERT INTO `Subject` (`id`, `moodleCourseId`, `name`, `shortName`, `description`, `createdAt`, `updatedAt`) VALUES (?, ?, ?, ?, ?, NOW(3), NOW(3))");
 
     foreach ($courses as $course) {
         $cname = trim($course->fullname);
@@ -233,9 +410,9 @@ try {
     $cohort_map = []; // moodle cohort id => ClassGroup UUID
     $class_count = 0;
 
-    $stmt_cg_select = $pdo->prepare("SELECT id FROM `ClassGroup` WHERE `moodleId` = ? OR `name` = ? LIMIT 1");
-    $stmt_cg_update = $pdo->prepare("UPDATE `ClassGroup` SET `moodleId` = ?, `name` = ?, `code` = ?, `description` = ?, `updatedAt` = NOW(3) WHERE `id` = ?");
-    $stmt_cg_insert = $pdo->prepare("INSERT INTO `ClassGroup` (`id`, `moodleId`, `name`, `code`, `description`, `createdAt`, `updatedAt`) VALUES (?, ?, ?, ?, ?, NOW(3), NOW(3))");
+    $stmt_cg_select = $prepare_sql("SELECT `id` FROM `ClassGroup` WHERE `moodleId` = ? OR `name` = ? LIMIT 1");
+    $stmt_cg_update = $prepare_sql("UPDATE `ClassGroup` SET `moodleId` = ?, `name` = ?, `code` = ?, `description` = ?, `updatedAt` = NOW(3) WHERE `id` = ?");
+    $stmt_cg_insert = $prepare_sql("INSERT INTO `ClassGroup` (`id`, `moodleId`, `name`, `code`, `description`, `createdAt`, `updatedAt`) VALUES (?, ?, ?, ?, ?, NOW(3), NOW(3))");
 
     foreach ($cohorts as $c) {
         $name = trim($c->name);
@@ -295,8 +472,8 @@ try {
         $role_map = [];
     }
 
-    $stmt_user_select = $pdo->prepare("SELECT id FROM `User` WHERE `moodleUserId` = ? OR `username` = ? LIMIT 1");
-    $stmt_user_update = $pdo->prepare("
+    $stmt_user_select = $prepare_sql("SELECT `id` FROM `User` WHERE `moodleUserId` = ? OR `username` = ? LIMIT 1");
+    $stmt_user_update = $prepare_sql("
         UPDATE `User`
            SET `moodleUserId` = ?,
                `username` = ?,
@@ -309,7 +486,7 @@ try {
                `updatedAt` = NOW(3)
          WHERE `id` = ?
     ");
-    $stmt_user_insert = $pdo->prepare("
+    $stmt_user_insert = $prepare_sql("
         INSERT INTO `User` (`id`, `moodleUserId`, `username`, `fullName`, `passwordHash`, `role`, `className`, `classGroupId`, `roomCode`, `isActive`, `createdAt`, `updatedAt`)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))
     ");
@@ -432,9 +609,9 @@ try {
             ", [], 0, 500);
         }
 
-        $stmt_q_select = $pdo->prepare("SELECT id FROM `Question` WHERE `moodleQuestionId` = ? OR `code` = ? LIMIT 1");
-        $stmt_q_code_check = $pdo->prepare("SELECT id FROM `Question` WHERE `code` = ? AND `id` <> ? LIMIT 1");
-        $stmt_q_update = $pdo->prepare("
+        $stmt_q_select = $prepare_sql("SELECT `id` FROM `Question` WHERE `moodleQuestionId` = ? OR `code` = ? LIMIT 1");
+        $stmt_q_code_check = $prepare_sql("SELECT `id` FROM `Question` WHERE `code` = ? AND `id` <> ? LIMIT 1");
+        $stmt_q_update = $prepare_sql("
             UPDATE `Question`
                SET `moodleQuestionId` = ?,
                    `code` = ?,
@@ -448,7 +625,7 @@ try {
                    `updatedAt` = NOW(3)
              WHERE `id` = ?
         ");
-        $stmt_q_insert = $pdo->prepare("
+        $stmt_q_insert = $prepare_sql("
             INSERT INTO `Question` (`id`, `moodleQuestionId`, `code`, `subject`, `gradeLevel`, `type`, `stem`, `points`, `tolerance`, `optionsJson`, `explanation`, `createdAt`, `updatedAt`)
             VALUES (?, ?, ?, ?, 'UMUM', ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))
         ");
@@ -626,8 +803,8 @@ try {
              ORDER BY c.id ASC
         ");
 
-        $stmt_exam_select = $pdo->prepare("SELECT id FROM `Exam` WHERE `moodleCbtId` = ? LIMIT 1");
-        $stmt_exam_update = $pdo->prepare("
+        $stmt_exam_select = $prepare_sql("SELECT `id` FROM `Exam` WHERE `moodleCbtId` = ? LIMIT 1");
+        $stmt_exam_update = $prepare_sql("
             UPDATE `Exam`
                SET `title` = ?,
                    `courseName` = ?,
@@ -642,9 +819,9 @@ try {
                    `updatedAt` = NOW(3)
              WHERE `id` = ?
         ");
-        $stmt_exam_insert = $pdo->prepare("
+        $stmt_exam_insert = $prepare_sql("
             INSERT INTO `Exam` (`id`, `moodleCbtId`, `title`, `courseName`, `durationSeconds`, `maxStrikes`, `sebRequired`, `activeToken`, `tokenExpiresAt`, `questionsJson`, `answerKeysJson`, `timeOpen`, `timeClose`, `createdAt`, `updatedAt`)
-            VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))
+            VALUES (?, ?, ?, ?, ?, ?, FALSE, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))
         ");
 
         $now_dt = new DateTime();
