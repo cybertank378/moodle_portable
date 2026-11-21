@@ -275,6 +275,26 @@ try {
         $user_cohort_map[(int)$cm->userid] = (int)$cm->cohortid;
     }
 
+    $role_map = [];
+    try {
+        $role_rows = $DB->get_records_sql("
+            SELECT ra.id, ra.userid, r.shortname
+              FROM {role_assignments} ra
+              JOIN {role} r ON r.id = ra.roleid
+        ");
+        foreach ($role_rows as $rr) {
+            $ruid = (int)$rr->userid;
+            $rshort = strtolower(trim((string)$rr->shortname));
+            if (in_array($rshort, ['manager', 'coursecreator', 'editingteacher'], true)) {
+                $role_map[$ruid] = 'TEACHER';
+            } else if ($rshort === 'teacher' && !isset($role_map[$ruid])) {
+                $role_map[$ruid] = 'PROCTOR';
+            }
+        }
+    } catch (Throwable $e) {
+        $role_map = [];
+    }
+
     $stmt_user_select = $pdo->prepare("SELECT id FROM `User` WHERE `moodleUserId` = ? OR `username` = ? LIMIT 1");
     $stmt_user_update = $pdo->prepare("
         UPDATE `User`
@@ -291,7 +311,7 @@ try {
     ");
     $stmt_user_insert = $pdo->prepare("
         INSERT INTO `User` (`id`, `moodleUserId`, `username`, `fullName`, `passwordHash`, `role`, `className`, `classGroupId`, `roomCode`, `isActive`, `createdAt`, `updatedAt`)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'R1', ?, NOW(3), NOW(3))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))
     ");
 
     $user_count = 0;
@@ -305,18 +325,21 @@ try {
 
         // Tentukan Role
         $role = 'STUDENT';
-        if (is_siteadmin($uid) || $uname === 'admin') {
+        if (is_siteadmin($uid) || strtolower($uname) === 'admin') {
             $role = 'ADMIN';
+        } else if (isset($role_map[$uid])) {
+            $role = $role_map[$uid];
         }
 
-        // Dapatkan Kelas
+        // Dapatkan Kelas (hanya untuk STUDENT)
         $classGroupId = null;
         $className = null;
-        if (isset($user_cohort_map[$uid]) && isset($cohort_map[$user_cohort_map[$uid]])) {
+        if ($role === 'STUDENT' && isset($user_cohort_map[$uid]) && isset($cohort_map[$user_cohort_map[$uid]])) {
             $classGroupId = $cohort_map[$user_cohort_map[$uid]]['id'];
             $className = $cohort_map[$user_cohort_map[$uid]]['name'];
         }
 
+        $roomCode = ($role === 'STUDENT') ? 'LAB-01' : null;
         $isActive = ($u->suspended == 0) ? 1 : 0;
         $pwd = !empty($u->password) ? $u->password : password_hash('Aksaventra@2026', PASSWORD_DEFAULT);
 
@@ -328,7 +351,7 @@ try {
             $stmt_user_update->execute([$uid, $uname, $fullname, $pwd, $role, $className, $classGroupId, $isActive, $user_uuid]);
         } else {
             $user_uuid = generate_uuid_v4();
-            $stmt_user_insert->execute([$user_uuid, $uid, $uname, $fullname, $pwd, $role, $className, $classGroupId, $isActive]);
+            $stmt_user_insert->execute([$user_uuid, $uid, $uname, $fullname, $pwd, $role, $className, $classGroupId, $roomCode, $isActive]);
         }
         $user_count++;
     }

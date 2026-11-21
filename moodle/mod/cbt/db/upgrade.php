@@ -181,6 +181,13 @@ function xmldb_cbt_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026111701, 'cbt');
     }
 
+    if ($oldversion < 2026112101) {
+        if (class_exists('\mod_cbt\observer')) {
+            \mod_cbt\observer::dispatch('user', 'updated', 2);
+        }
+        upgrade_mod_savepoint(true, 2026112101, 'cbt');
+    }
+
     return true;
 }
 
