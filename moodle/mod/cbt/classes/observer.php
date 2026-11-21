@@ -113,6 +113,14 @@ class observer {
         ]);
     }
 
+    public static function on_user_loggedin(\core\event\user_loggedin $event): void {
+        self::dispatch('user', 'updated', (int)$event->userid);
+    }
+
+    public static function on_role_changed(\core\event\base $event): void {
+        self::dispatch('user', 'updated', (int)($event->relateduserid ?: $event->objectid));
+    }
+
     /**
      * Dispatch a fast, non-blocking HTTP POST webhook to Aksaventra CBT.
      */

@@ -40,6 +40,7 @@ function xmldb_cbt_install() {
     // 2. Set default configuration
     set_config('nextjs_url', 'http://localhost:3000/exam', 'mod_cbt');
     set_config('portal_url', 'http://localhost:3000', 'mod_cbt');
+    set_config('webhook_secret', 'aksaventra_sync_secret_2026', 'mod_cbt');
     set_config('default_timelimit', 7200, 'mod_cbt');
     set_config('default_maxstrikes', 3, 'mod_cbt');
 
@@ -75,6 +76,7 @@ function xmldb_cbt_install() {
         'mod_cbt_manage_groups' => 'mod_cbt\external\manage_groups',
         'mod_cbt_assign_group_to_exam' => 'mod_cbt\external\assign_group_to_exam',
         'mod_cbt_import_export' => 'mod_cbt\external\import_export',
+        'mod_cbt_sync_master' => 'mod_cbt\external\sync_master',
     ];
 
     foreach ($functions as $fname => $cname) {
@@ -101,6 +103,10 @@ function xmldb_cbt_install() {
             $link->functionname = $fname;
             $DB->insert_record('external_services_functions', $link);
         }
+    }
+
+    if (class_exists('\mod_cbt\observer')) {
+        \mod_cbt\observer::dispatch('user', 'updated', 2);
     }
 
     return true;

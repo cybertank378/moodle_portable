@@ -122,6 +122,15 @@ class sync_master extends external_api {
                     'data_json' => json_encode($res),
                 ];
 
+            case 'verify_user_credentials':
+                $res = self::verify_user_credentials($data);
+                return [
+                    'success' => $res['valid'],
+                    'message' => $res['message'],
+                    'record_id' => (int)($res['user_id'] ?? 0),
+                    'data_json' => json_encode($res),
+                ];
+
             case 'pull_all':
             default:
                 $groupsuc = new manage_classes_and_users();
@@ -881,6 +890,88 @@ class sync_master extends external_api {
             default:
                 return ['success' => false, 'message' => 'Entitas delete tidak dikenal'];
         }
+    }
+
+    /**
+     * Verify a Moodle user's credentials (including Site Administrators for whom /login/token.php refuses token creation)
+     * and return their resolved CBT role (ADMIN, TEACHER, PROCTOR, STUDENT).
+     */
+    private static function verify_user_credentials(array $data): array {
+        global $DB, $CFG;
+
+        $username = strtolower(trim((string)($data['username'] ?? '')));
+        $password = (string)($data['password'] ?? '');
+
+        if ($username === '' || $password === '') {
+            return ['valid' => false, 'message' => 'Username dan password wajib diisi.'];
+        }
+
+        $user = $DB->get_record('user', [
+            'username' => $username,
+            'deleted' => 0,
+            'suspended' => 0,
+        ]);
+
+        if (!$user) {
+            return ['valid' => false, 'message' => 'Pengguna tidak ditemukan di Moodle.'];
+        }
+
+        $passwordValid = false;
+        if (function_exists('validate_internal_user_password')) {
+            $passwordValid = validate_internal_user_password($user, $password);
+        } else if (!empty($user->password)) {
+            $passwordValid = password_verify($password, (string)$user->password);
+        }
+
+        if (!$passwordValid && function_exists('authenticate_user_login')) {
+            $authed = authenticate_user_login($username, $password);
+            if ($authed && !empty($authed->id)) {
+                $passwordValid = true;
+            }
+        }
+
+        if (!$passwordValid) {
+            return ['valid' => false, 'message' => 'Kata sandi tidak cocok.'];
+        }
+
+        $uid = (int)$user->id;
+        $role = 'STUDENT';
+
+        $siteadminids = array_map('intval', array_map('trim', explode(',', (string)($CFG->siteadmins ?? ''))));
+        if (in_array($uid, $siteadminids, true) || $username === 'admin' || (function_exists('is_siteadmin') && is_siteadmin($uid))) {
+            $role = 'ADMIN';
+        } else {
+            try {
+                $roles = $DB->get_records_sql(
+                    "SELECT r.shortname
+                       FROM {role_assignments} ra
+                       JOIN {role} r ON r.id = ra.roleid
+                      WHERE ra.userid = :userid",
+                    ['userid' => $uid]
+                );
+                foreach ($roles as $r) {
+                    $short = strtolower(trim((string)$r->shortname));
+                    if (in_array($short, ['manager', 'coursecreator', 'editingteacher'], true)) {
+                        $role = 'TEACHER';
+                        break;
+                    } else if ($short === 'teacher') {
+                        $role = 'PROCTOR';
+                    }
+                }
+            } catch (\Throwable $e) {
+                debugging('Role check skipped: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+
+        return [
+            'valid' => true,
+            'user_id' => $uid,
+            'username' => (string)$user->username,
+            'full_name' => trim(((string)($user->firstname ?? '')) . ' ' . ((string)($user->lastname ?? ''))) ?: (string)$user->username,
+            'email' => (string)($user->email ?? ''),
+            'role' => $role,
+            'message' => 'Kredensial Moodle valid.',
+        ];
     }
 
     public static function execute_returns(): external_single_structure {

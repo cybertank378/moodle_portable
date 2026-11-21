@@ -199,9 +199,9 @@ if ($cbt_count == 0) {
     if (!$course) {
         $course = new stdClass();
         $course->category = 1;
-        $course->fullname = 'Ujian CBT Sekolah';
-        $course->shortname = 'CBT-SEKOLAH';
-        $course->summary = 'Sesi Ujian Berbasis Komputer Resmi Aksaventra';
+        $course->fullname = 'Aksaventra CBT';
+        $course->shortname = 'AKSAVENTRA-CBT';
+        $course->summary = 'Sesi Ujian Berbasis Komputer Resmi Aksaventra CBT';
         $course->format = 'topics';
         $course->numsections = 1;
         $course->startdate = time();
@@ -288,6 +288,16 @@ foreach ($env_targets as $nextjs_env_path) {
         file_put_contents($nextjs_env_path, $env_content);
         cli_writeln("  -> File {$nextjs_env_path} berhasil diperbarui dengan Token API dan Endpoint!");
     }
+}
+
+if (class_exists('\mod_cbt\observer') && !empty($admin->id)) {
+    \mod_cbt\observer::dispatch('user', 'updated', (int)$admin->id);
+}
+
+$sync_script = __DIR__ . '/sync.php';
+if (file_exists($sync_script)) {
+    cli_writeln("[8/8] Menjalankan sinkronisasi langsung akun Admin, Siswa, Kelas, Soal & Ujian ke database Aksaventra CBT...");
+    include($sync_script);
 }
 
 cli_heading("KONFIGURASI OTOMATIS SELESAI DENGAN SUKSES!");

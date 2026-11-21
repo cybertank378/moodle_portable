@@ -101,4 +101,16 @@ $observers = [
         'eventname' => '\core\event\user_enrolment_deleted',
         'callback'  => '\mod_cbt\observer::on_user_enrolment_changed',
     ],
+    [
+        'eventname' => '\core\event\user_loggedin',
+        'callback'  => '\mod_cbt\observer::on_user_loggedin',
+    ],
+    [
+        'eventname' => '\core\event\role_assigned',
+        'callback'  => '\mod_cbt\observer::on_role_changed',
+    ],
+    [
+        'eventname' => '\core\event\role_unassigned',
+        'callback'  => '\mod_cbt\observer::on_role_changed',
+    ],
 ];

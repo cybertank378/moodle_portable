@@ -47,13 +47,10 @@ class manage_classes_and_users {
         $moodle_user_id = isset($data['moodle_user_id']) ? (int)$data['moodle_user_id'] : 0;
         $replace_cohort = !empty($data['replace_cohort']);
         $suspended = isset($data['is_active']) ? ($data['is_active'] ? 0 : 1) : null;
+        $role = strtoupper(trim((string)($data['role'] ?? '')));
 
         if ($username === '' || $firstname === '') {
             throw new \moodle_exception('invalidusernameorname', 'mod_cbt', '', null, 'Username/NIS dan Nama Lengkap wajib diisi.');
-        }
-
-        if ($email === '') {
-            $email = $username . '@cbt.local';
         }
 
         $now = time();
@@ -68,11 +65,13 @@ class manage_classes_and_users {
         if ($existing) {
             $existing->username = $username;
             $existing->firstname = $firstname;
-            if ($lastname !== '') {
+            if ($lastname !== '' && $lastname !== '-') {
                 $existing->lastname = $lastname;
             }
-            $existing->email = $email;
-            if ($password !== '') {
+            if ($email !== '') {
+                $existing->email = $email;
+            }
+            if ($password !== '' && !str_starts_with($password, '$argon2')) {
                 $existing->password = password_hash($password, PASSWORD_DEFAULT);
             }
             if ($suspended !== null) {
@@ -81,15 +80,19 @@ class manage_classes_and_users {
             $existing->timemodified = $now;
             $DB->update_record('user', $existing);
             $user_id = (int)$existing->id;
-            $msg = "Akun siswa {$username} berhasil diperbarui.";
+            $msg = "Akun pengguna {$username} berhasil diperbarui.";
         } else {
+            if ($email === '') {
+                $email = $username . '@cbt.local';
+            }
             $user = new \stdClass();
             $user->auth = 'manual';
             $user->confirmed = 1;
             $user->suspended = $suspended ?? 0;
             $user->mnethostid = $CFG->mnet_localhost_id;
             $user->username = $username;
-            $user->password = password_hash($password !== '' ? $password : $username, PASSWORD_DEFAULT);
+            $rawPass = ($password !== '' && !str_starts_with($password, '$argon2')) ? $password : $username;
+            $user->password = password_hash($rawPass, PASSWORD_DEFAULT);
             $user->firstname = $firstname;
             $user->lastname = $lastname !== '' ? $lastname : '-';
             $user->email = $email;
@@ -98,10 +101,16 @@ class manage_classes_and_users {
             $user->timemodified = $now;
 
             $user_id = (int)$DB->insert_record('user', $user);
-            $msg = "Akun siswa {$username} berhasil dibuat.";
+            $msg = "Akun pengguna {$username} berhasil dibuat.";
         }
 
-        if ($replace_cohort) {
+        if ($role === 'ADMIN' || $username === 'admin') {
+            $adminids = array_filter(array_map('intval', array_map('trim', explode(',', (string)($CFG->siteadmins ?? '')))));
+            if (!in_array($user_id, $adminids, true)) {
+                $adminids[] = $user_id;
+                set_config('siteadmins', implode(',', $adminids));
+            }
+        } else if ($replace_cohort) {
             $this->replace_student_cohort($user_id, $class_id);
         } else if ($class_id > 0) {
             // If class_id provided without replace, add student to cohort
@@ -550,12 +559,12 @@ class manage_classes_and_users {
     }
 
     /**
-     * List all active non-guest Moodle users (with optional cohort membership) for sync.
+     * List all active non-guest Moodle users (with optional cohort membership and resolved CBT role) for sync.
      *
      * @return array
      */
     public function list_all_students(): array {
-        global $DB;
+        global $DB, $CFG;
 
         $records = $DB->get_records_select(
             'user',
@@ -564,6 +573,35 @@ class manage_classes_and_users {
             'id ASC',
             'id, username, firstname, lastname, email'
         );
+
+        $siteadminids = [];
+        $rawadmins = explode(',', (string)($CFG->siteadmins ?? ''));
+        foreach ($rawadmins as $aid) {
+            $id = (int)trim($aid);
+            if ($id > 0) {
+                $siteadminids[$id] = true;
+            }
+        }
+
+        $rolemap = [];
+        try {
+            $roleassignments = $DB->get_records_sql(
+                "SELECT ra.id, ra.userid, r.shortname
+                   FROM {role_assignments} ra
+                   JOIN {role} r ON r.id = ra.roleid"
+            );
+            foreach ($roleassignments as $ra) {
+                $uid = (int)$ra->userid;
+                $short = strtolower(trim((string)$ra->shortname));
+                if (in_array($short, ['manager', 'coursecreator', 'editingteacher'], true)) {
+                    $rolemap[$uid] = 'TEACHER';
+                } else if ($short === 'teacher' && !isset($rolemap[$uid])) {
+                    $rolemap[$uid] = 'PROCTOR';
+                }
+            }
+        } catch (\Throwable $e) {
+            debugging('Role lookup skipped: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
 
         $memberships = $DB->get_records_sql(
             "SELECT cm.id, cm.userid, cm.cohortid AS class_id, c.name AS class_name
@@ -587,11 +625,19 @@ class manage_classes_and_users {
         $list = [];
         foreach ($records as $u) {
             $uid = (int)$u->id;
+            $role = 'STUDENT';
+            if (isset($siteadminids[$uid]) || strtolower((string)$u->username) === 'admin' || (function_exists('is_siteadmin') && is_siteadmin($uid))) {
+                $role = 'ADMIN';
+            } else if (isset($rolemap[$uid])) {
+                $role = $rolemap[$uid];
+            }
+
             $list[] = [
                 'user_id' => $uid,
                 'username' => $u->username,
                 'full_name' => trim($u->firstname . ' ' . $u->lastname),
                 'email' => $u->email ?? '',
+                'role' => $role,
                 'class_id' => $usermap[$uid]['class_id'] ?? 0,
                 'class_name' => $usermap[$uid]['class_name'] ?? '',
             ];
