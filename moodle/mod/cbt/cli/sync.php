@@ -472,7 +472,7 @@ try {
         $role_map = [];
     }
 
-    $stmt_user_select = $prepare_sql("SELECT `id` FROM `User` WHERE `moodleUserId` = ? OR `username` = ? LIMIT 1");
+    $stmt_user_select = $prepare_sql("SELECT `id`, `passwordHash` FROM `User` WHERE `moodleUserId` = ? OR `username` = ? LIMIT 1");
     $stmt_user_update = $prepare_sql("
         UPDATE `User`
            SET `moodleUserId` = ?,
@@ -491,6 +491,7 @@ try {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))
     ");
 
+    $hash_algo = defined('PASSWORD_ARGON2ID') ? PASSWORD_ARGON2ID : PASSWORD_DEFAULT;
     $user_count = 0;
     foreach ($users as $u) {
         $uid = (int)$u->id;
@@ -518,13 +519,17 @@ try {
 
         $roomCode = ($role === 'STUDENT') ? 'LAB-01' : null;
         $isActive = ($u->suspended == 0) ? 1 : 0;
-        $pwd = !empty($u->password) ? $u->password : password_hash('Aksaventra@2026', PASSWORD_DEFAULT);
+        $pwd = !empty($u->password) ? $u->password : password_hash('Aksaventra@2026', $hash_algo);
 
         $stmt_user_select->execute([$uid, $uname]);
         $urow = $stmt_user_select->fetch();
 
         if ($urow) {
             $user_uuid = $urow['id'];
+            $existing_hash = (string)($urow['passwordHash'] ?? '');
+            if (str_starts_with($existing_hash, '$argon2') && !str_starts_with((string)$pwd, '$argon2')) {
+                $pwd = $existing_hash;
+            }
             $stmt_user_update->execute([$uid, $uname, $fullname, $pwd, $role, $className, $classGroupId, $isActive, $user_uuid]);
         } else {
             $user_uuid = generate_uuid_v4();
