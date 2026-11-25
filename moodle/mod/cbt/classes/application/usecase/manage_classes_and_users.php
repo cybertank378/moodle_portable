@@ -533,7 +533,7 @@ class manage_classes_and_users {
 
         global $DB;
 
-        $sql = "SELECT u.id, u.username, u.firstname, u.lastname, u.email,
+        $sql = "SELECT u.id, u.username, u.firstname, u.lastname, u.email, u.password,
                        cm.cohortid AS class_id, c.name AS class_name
                   FROM {cohort_members} cm
                   JOIN {user} u ON u.id = cm.userid
@@ -550,6 +550,7 @@ class manage_classes_and_users {
                 'username' => $u->username,
                 'full_name' => trim($u->firstname . ' ' . $u->lastname),
                 'email' => $u->email,
+                'password_hash' => (string)($u->password ?? ''),
                 'class_id' => (int)($u->class_id ?? 0),
                 'class_name' => (string)($u->class_name ?? ''),
             ];
@@ -571,7 +572,7 @@ class manage_classes_and_users {
             "deleted = 0 AND suspended = 0 AND username <> :guest",
             ['guest' => 'guest'],
             'id ASC',
-            'id, username, firstname, lastname, email'
+            'id, username, firstname, lastname, email, password'
         );
 
         $siteadminids = [];
@@ -637,6 +638,7 @@ class manage_classes_and_users {
                 'username' => $u->username,
                 'full_name' => trim($u->firstname . ' ' . $u->lastname),
                 'email' => $u->email ?? '',
+                'password_hash' => (string)($u->password ?? ''),
                 'role' => $role,
                 'class_id' => $usermap[$uid]['class_id'] ?? 0,
                 'class_name' => $usermap[$uid]['class_name'] ?? '',
