@@ -58,6 +58,68 @@ function generate_uuid_v4(): string {
     return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
 }
 
+function clean_moodle_question_html(string $raw_html, string $filearea = 'questiontext', int $itemid = 0): string {
+    global $DB;
+    $html = trim($raw_html);
+    if ($html === '') {
+        return '';
+    }
+
+    // 1. Resolve @@PLUGINFILE@@/<filename> into inline data:<mimetype>;base64,... from Moodle file storage
+    if (str_contains($html, '@@PLUGINFILE@@/') && $itemid > 0 && function_exists('get_file_storage')) {
+        try {
+            $fs = get_file_storage();
+            $file_records = $DB->get_records_select(
+                'files',
+                "component = 'question' AND filearea = ? AND itemid = ? AND filename <> '.'",
+                [$filearea, $itemid],
+                'id ASC',
+                'id, filename, mimetype, filesize'
+            );
+            foreach ($file_records as $frec) {
+                $fname = (string)$frec->filename;
+                if ($fname === '' || (int)$frec->filesize > 2097152) {
+                    continue;
+                }
+                $stored = $fs->get_file_by_id((int)$frec->id);
+                if ($stored) {
+                    $content = $stored->get_content();
+                    if ($content !== false && $content !== '') {
+                        $mime = !empty($frec->mimetype) ? (string)$frec->mimetype : 'image/jpeg';
+                        $data_uri = 'data:' . $mime . ';base64,' . base64_encode($content);
+                        $html = str_replace(
+                            ['@@PLUGINFILE@@/' . $fname, '@@PLUGINFILE@@/' . rawurlencode($fname)],
+                            $data_uri,
+                            $html
+                        );
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            // Ignore file storage resolution errors
+        }
+    }
+
+    // 2. Convert <br>, </p>, </div> to newlines and strip noisy wrapper tags (<div>, <span>, <p>, <font>)
+    $html = preg_replace('/<br\s*\/?>/i', "\n", $html) ?? $html;
+    $html = preg_replace('/<\/(?:p|div|li|h[1-6])>/i', "\n", $html) ?? $html;
+    $html = preg_replace('/<!--[\s\S]*?-->/', '', $html) ?? $html;
+    $html = preg_replace('/<\/?(?:div|span|p|font|o:p|center|section|article)(?:\s[^>]*)?>/i', '', $html) ?? $html;
+
+    // 3. Clean obsolete attributes on <img> tags (border="0", align="bottom")
+    $html = preg_replace('/\s+(?:border|align|hspace|vspace)="[^"]*"/i', '', $html) ?? $html;
+
+    // 4. Decode HTML entities (&nbsp;, &amp;, &deg;, etc.)
+    $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $html = str_replace("\xC2\xA0", ' ', $html);
+
+    // 5. Collapse excessive whitespace per line
+    $lines = array_map(fn($l) => trim((string)(preg_replace('/[ \t]+/', ' ', $l) ?? $l)), explode("\n", $html));
+    $html = trim((string)(preg_replace("/\n{3,}/", "\n\n", implode("\n", $lines)) ?? implode("\n", $lines)));
+
+    return $html;
+}
+
 try {
     $cbt_driver = getenv('CBT_DB_DRIVER') ?: (!empty($CFG->dbtype) ? $CFG->dbtype : 'mariadb');
     $is_pgsql = in_array(strtolower(trim((string)$cbt_driver)), ['pgsql', 'postgres', 'postgresql'], true);
@@ -659,6 +721,7 @@ try {
                 $key = $labels[$idx] ?? (string)($idx + 1);
                 $frac = (float)$ans->fraction;
                 $isCorrect = $frac > 0.0;
+                $clean_ans = clean_moodle_question_html((string)$ans->answer, 'answer', (int)$ans->id);
                 if ($isCorrect) {
                     $positiveCount++;
                     $correctKeys[] = $key;
@@ -667,19 +730,19 @@ try {
                     $bestFraction = $frac;
                     $primaryCorrectKey = $key;
                     $primaryAnswerId = (int)$ans->id;
-                    $primaryAnswerText = trim(strip_tags((string)$ans->answer));
+                    $primaryAnswerText = trim(strip_tags($clean_ans));
                 }
 
                 $opts_for_db[] = [
                     'id' => 'moodle-ans-' . $ans->id,
                     'label' => $key,
-                    'text' => trim(strip_tags((string)$ans->answer)),
+                    'text' => $clean_ans,
                     'fraction' => $frac,
                     'isCorrect' => $isCorrect,
                 ];
                 $opts_for_exam[] = [
                     'key' => $key,
-                    'html' => trim((string)$ans->answer),
+                    'html' => $clean_ans,
                 ];
                 $idx++;
             }
@@ -732,7 +795,8 @@ try {
             $qsubject = (isset($rq->questioncategoryid) && isset($cat_subject_map[(int)$rq->questioncategoryid]))
                 ? $cat_subject_map[(int)$rq->questioncategoryid]
                 : 'Umum';
-            $qexplanation = trim(strip_tags((string)($rq->generalfeedback ?? ''))) ?: null;
+            $clean_stem = clean_moodle_question_html((string)$rq->questiontext, 'questiontext', $qid);
+            $qexplanation = clean_moodle_question_html((string)($rq->generalfeedback ?? ''), 'generalfeedback', $qid) ?: null;
             $optionsJson = json_encode($opts_for_db, JSON_UNESCAPED_UNICODE);
 
             $stmt_q_select->execute([$qid, $qcode]);
@@ -748,7 +812,7 @@ try {
                     $qcode,
                     $qsubject,
                     $effectiveType,
-                    (string)$rq->questiontext,
+                    $clean_stem,
                     $points,
                     $tolerance,
                     $optionsJson,
@@ -762,7 +826,7 @@ try {
                     $qcode,
                     $qsubject,
                     $effectiveType,
-                    (string)$rq->questiontext,
+                    $clean_stem,
                     $points,
                     $tolerance,
                     $optionsJson,
@@ -779,7 +843,7 @@ try {
                     'type' => $effectiveType,
                     'points' => $points,
                     'tolerance' => $tolerance,
-                    'stemHtml' => (string)$rq->questiontext,
+                    'stemHtml' => $clean_stem,
                     'options' => $opts_for_exam,
                 ];
                 if ($effectiveType === 'mcma') {

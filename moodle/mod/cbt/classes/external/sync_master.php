@@ -302,7 +302,7 @@ class sync_master extends external_api {
                 $options[] = [
                     'id' => 'moodle-ans-' . $ans->id,
                     'label' => $labels[$idx] ?? (string)($idx + 1),
-                    'text' => trim(strip_tags((string)$ans->answer)),
+                    'text' => self::clean_question_html((string)$ans->answer, 'answer', (int)$ans->id),
                     'fraction' => $frac,
                     'isCorrect' => $isCorrect,
                 ];
@@ -362,15 +362,75 @@ class sync_master extends external_api {
                 'code' => $code,
                 'name' => $q->name,
                 'type' => $effectiveType,
-                'stem' => (string)$q->questiontext,
+                'stem' => self::clean_question_html((string)$q->questiontext, 'questiontext', $qid),
                 'points' => (float)($q->defaultmark ?: 1.0),
                 'tolerance' => $tolerance,
-                'explanation' => strip_tags((string)($q->generalfeedback ?? '')),
+                'explanation' => self::clean_question_html((string)($q->generalfeedback ?? ''), 'generalfeedback', $qid),
                 'options' => $options,
             ];
         }
 
         return $list;
+    }
+
+    /**
+     * Resolves @@PLUGINFILE@@/<filename> into inline data:image/...;base64,... URIs
+     * and strips noisy wrapper HTML (<div>, <span>, <p>, <font>) while preserving <img>, <svg>, <table>, <sub>, <sup>.
+     */
+    private static function clean_question_html(string $raw_html, string $filearea = 'questiontext', int $itemid = 0): string {
+        global $DB;
+        $html = trim($raw_html);
+        if ($html === '') {
+            return '';
+        }
+
+        if (str_contains($html, '@@PLUGINFILE@@/') && $itemid > 0 && function_exists('get_file_storage')) {
+            try {
+                $fs = get_file_storage();
+                $file_records = $DB->get_records_select(
+                    'files',
+                    "component = 'question' AND filearea = ? AND itemid = ? AND filename <> '.'",
+                    [$filearea, $itemid],
+                    'id ASC',
+                    'id, filename, mimetype, filesize'
+                );
+                foreach ($file_records as $frec) {
+                    $fname = (string)$frec->filename;
+                    if ($fname === '' || (int)$frec->filesize > 2097152) {
+                        continue;
+                    }
+                    $stored = $fs->get_file_by_id((int)$frec->id);
+                    if ($stored) {
+                        $content = $stored->get_content();
+                        if ($content !== false && $content !== '') {
+                            $mime = !empty($frec->mimetype) ? (string)$frec->mimetype : 'image/jpeg';
+                            $data_uri = 'data:' . $mime . ';base64,' . base64_encode($content);
+                            $html = str_replace(
+                                ['@@PLUGINFILE@@/' . $fname, '@@PLUGINFILE@@/' . rawurlencode($fname)],
+                                $data_uri,
+                                $html
+                            );
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                debugging('clean_question_html file resolution skipped: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+
+        $html = preg_replace('/<br\s*\/?>/i', "\n", $html) ?? $html;
+        $html = preg_replace('/<\/(?:p|div|li|h[1-6])>/i', "\n", $html) ?? $html;
+        $html = preg_replace('/<!--[\s\S]*?-->/', '', $html) ?? $html;
+        $html = preg_replace('/<\/?(?:div|span|p|font|o:p|center|section|article)(?:\s[^>]*)?>/i', '', $html) ?? $html;
+        $html = preg_replace('/\s+(?:border|align|hspace|vspace)="[^"]*"/i', '', $html) ?? $html;
+
+        $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $html = str_replace("\xC2\xA0", ' ', $html);
+
+        $lines = array_map(fn($l) => trim((string)(preg_replace('/[ \t]+/', ' ', $l) ?? $l)), explode("\n", $html));
+        $html = trim((string)(preg_replace("/\n{3,}/", "\n\n", implode("\n", $lines)) ?? implode("\n", $lines)));
+
+        return $html;
     }
 
     /**
