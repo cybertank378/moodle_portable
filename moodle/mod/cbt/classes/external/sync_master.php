@@ -248,7 +248,7 @@ class sync_master extends external_api {
         if ($hasVersioning) {
             $sql = "SELECT q.id, q.qtype, q.name, q.questiontext, q.questiontextformat,
                            q.defaultmark, q.generalfeedback, qbe.idnumber AS code,
-                           qbe.id AS questionbankentryid, qv.version
+                           qbe.id AS questionbankentryid, qbe.questioncategoryid, qv.version
                       FROM {question} q
                       JOIN {question_versions} qv ON qv.questionid = q.id
                       JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
@@ -271,6 +271,46 @@ class sync_master extends external_api {
                 0,
                 500
             );
+        }
+
+        // Map question category id -> [course_id, subject name] for Course/Subject attribution.
+        $catCourseMap = [];
+        if ($dbman->table_exists('question_categories')) {
+            try {
+                $courseRows = $DB->get_records_select('course', 'id > 1', null, '', 'id, fullname');
+                $courseNames = [];
+                foreach ($courseRows as $co) {
+                    $courseNames[(int)$co->id] = trim((string)$co->fullname);
+                }
+                $cmCourseMap = [];
+                if ($dbman->table_exists('course_modules')) {
+                    $cms = $DB->get_records('course_modules', null, '', 'id, course');
+                    foreach ($cms as $cm) {
+                        $cmCourseMap[(int)$cm->id] = (int)$cm->course;
+                    }
+                }
+                $catRows = $DB->get_records_sql("
+                    SELECT qc.id, ctx.contextlevel, ctx.instanceid
+                      FROM {question_categories} qc
+                      JOIN {context} ctx ON ctx.id = qc.contextid
+                ");
+                foreach ($catRows as $cr) {
+                    $cid = 0;
+                    if ((int)$cr->contextlevel === CONTEXT_COURSE) {
+                        $cid = (int)$cr->instanceid;
+                    } else if ((int)$cr->contextlevel === CONTEXT_MODULE && isset($cmCourseMap[(int)$cr->instanceid])) {
+                        $cid = $cmCourseMap[(int)$cr->instanceid];
+                    }
+                    if ($cid > 0 && !empty($courseNames[$cid])) {
+                        $catCourseMap[(int)$cr->id] = [
+                            'course_id' => $cid,
+                            'subject' => $courseNames[$cid],
+                        ];
+                    }
+                }
+            } catch (\Throwable $e) {
+                $catCourseMap = [];
+            }
         }
 
         $list = [];
@@ -355,10 +395,16 @@ class sync_master extends external_api {
                 ? trim((string)$q->code)
                 : ('MDL-Q-' . $qid);
 
+            $courseMeta = (isset($q->questioncategoryid) && isset($catCourseMap[(int)$q->questioncategoryid]))
+                ? $catCourseMap[(int)$q->questioncategoryid]
+                : ['course_id' => 0, 'subject' => 'Umum'];
+
             $list[] = [
                 'id' => $qid,
                 'questionbankentryid' => (int)($q->questionbankentryid ?? 0),
                 'version' => (int)($q->version ?? 1),
+                'course_id' => (int)$courseMeta['course_id'],
+                'subject' => (string)$courseMeta['subject'],
                 'code' => $code,
                 'name' => $q->name,
                 'type' => $effectiveType,
