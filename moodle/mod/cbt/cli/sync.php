@@ -517,16 +517,44 @@ try {
     $role_map = [];
     try {
         $role_rows = $DB->get_records_sql("
-            SELECT ra.id, ra.userid, r.shortname
+            SELECT ra.id, ra.userid, r.shortname, ctx.contextlevel
               FROM {role_assignments} ra
               JOIN {role} r ON r.id = ra.roleid
+              JOIN {context} ctx ON ctx.id = ra.contextid
         ");
+        $role_flags = [];
         foreach ($role_rows as $rr) {
             $ruid = (int)$rr->userid;
             $rshort = strtolower(trim((string)$rr->shortname));
-            if (in_array($rshort, ['manager', 'coursecreator', 'editingteacher'], true)) {
+            $ctxlevel = (int)$rr->contextlevel;
+            if (!isset($role_flags[$ruid])) {
+                $role_flags[$ruid] = [
+                    'teacher_role' => false,
+                    'system_manager' => false,
+                    'other_manager' => false,
+                    'proctor' => false,
+                ];
+            }
+            if (in_array($rshort, ['coursecreator', 'editingteacher'], true)) {
+                $role_flags[$ruid]['teacher_role'] = true;
+            } else if ($rshort === 'manager') {
+                if ($ctxlevel === CONTEXT_SYSTEM) {
+                    $role_flags[$ruid]['system_manager'] = true;
+                } else {
+                    $role_flags[$ruid]['other_manager'] = true;
+                }
+            } else if ($rshort === 'teacher') {
+                $role_flags[$ruid]['proctor'] = true;
+            }
+        }
+        foreach ($role_flags as $ruid => $f) {
+            if ($f['teacher_role']) {
                 $role_map[$ruid] = 'TEACHER';
-            } else if ($rshort === 'teacher' && !isset($role_map[$ruid])) {
+            } else if ($f['system_manager']) {
+                $role_map[$ruid] = 'ADMIN';
+            } else if ($f['other_manager']) {
+                $role_map[$ruid] = 'TEACHER';
+            } else if ($f['proctor']) {
                 $role_map[$ruid] = 'PROCTOR';
             }
         }
