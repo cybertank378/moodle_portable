@@ -633,14 +633,19 @@ class manage_classes_and_users {
         $list = [];
 
         foreach ($records as $u) {
+            $firstname = trim((string)($u->firstname ?? ''));
+            $lastname = trim((string)($u->lastname ?? ''));
+            $resolvedFullName = $firstname !== '' ? $firstname : ($lastname !== '' && $lastname !== '-' ? $lastname : (string)$u->username);
+            $resolvedClassName = ($lastname !== '' && $lastname !== '-') ? $lastname : (string)($u->class_name ?? '');
+
             $list[] = [
                 'user_id' => (int)$u->id,
                 'username' => $u->username,
-                'full_name' => trim($u->firstname . ' ' . $u->lastname),
+                'full_name' => $resolvedFullName,
                 'email' => $u->email,
                 'password_hash' => (string)($u->password ?? ''),
                 'class_id' => (int)($u->class_id ?? 0),
-                'class_name' => (string)($u->class_name ?? ''),
+                'class_name' => $resolvedClassName,
             ];
         }
 
@@ -676,7 +681,7 @@ class manage_classes_and_users {
         $userroleshorts = [];
         try {
             $roleassignments = $DB->get_records_sql(
-                "SELECT ra.id, ra.userid, r.shortname, ctx.contextlevel
+                "SELECT ra.id, ra.userid, r.shortname, r.archetype, ctx.contextlevel
                    FROM {role_assignments} ra
                    JOIN {role} r ON r.id = ra.roleid
                    JOIN {context} ctx ON ctx.id = ra.contextid"
@@ -685,6 +690,7 @@ class manage_classes_and_users {
             foreach ($roleassignments as $ra) {
                 $uid = (int)$ra->userid;
                 $short = strtolower(trim((string)$ra->shortname));
+                $arch = strtolower(trim((string)($ra->archetype ?? '')));
                 $ctxlevel = (int)$ra->contextlevel;
                 if ($short !== '') {
                     $userroleshorts[$uid][$short] = true;
@@ -697,15 +703,16 @@ class manage_classes_and_users {
                         'proctor' => false,
                     ];
                 }
-                if (in_array($short, ['coursecreator', 'editingteacher'], true)) {
+                if (in_array($short, ['coursecreator', 'editingteacher'], true)
+                    || in_array($arch, ['coursecreator', 'editingteacher'], true)) {
                     $flags[$uid]['teacher_role'] = true;
-                } else if ($short === 'manager') {
+                } else if ($short === 'manager' || $arch === 'manager') {
                     if ($ctxlevel === CONTEXT_SYSTEM) {
                         $flags[$uid]['system_manager'] = true;
                     } else {
                         $flags[$uid]['other_manager'] = true;
                     }
-                } else if ($short === 'teacher') {
+                } else if ($short === 'teacher' || $arch === 'teacher') {
                     $flags[$uid]['proctor'] = true;
                 }
             }
@@ -749,6 +756,8 @@ class manage_classes_and_users {
         $list = [];
         foreach ($records as $u) {
             $uid = (int)$u->id;
+            $firstname = trim((string)($u->firstname ?? ''));
+            $lastname = trim((string)($u->lastname ?? ''));
             $role = 'STUDENT';
             if (isset($siteadminids[$uid]) || strtolower((string)$u->username) === 'admin' || (function_exists('is_siteadmin') && is_siteadmin($uid))) {
                 $role = 'ADMIN';
@@ -756,16 +765,27 @@ class manage_classes_and_users {
                 $role = $rolemap[$uid];
             }
 
+            if ($role === 'STUDENT') {
+                $resolvedFullName = $firstname !== '' ? $firstname : ($lastname !== '' && $lastname !== '-' ? $lastname : (string)$u->username);
+                $resolvedClassName = ($lastname !== '' && $lastname !== '-') ? $lastname : ($usermap[$uid]['class_name'] ?? '');
+            } else {
+                $resolvedFullName = trim($firstname . ($lastname !== '' && $lastname !== '-' ? ' ' . $lastname : ''));
+                if ($resolvedFullName === '') {
+                    $resolvedFullName = (string)$u->username;
+                }
+                $resolvedClassName = '';
+            }
+
             $list[] = [
                 'user_id' => $uid,
                 'username' => $u->username,
-                'full_name' => trim($u->firstname . ' ' . $u->lastname),
+                'full_name' => $resolvedFullName,
                 'email' => $u->email ?? '',
                 'password_hash' => (string)($u->password ?? ''),
                 'role' => $role,
                 'moodle_roles' => implode(',', array_keys($userroleshorts[$uid] ?? [])),
-                'class_id' => $usermap[$uid]['class_id'] ?? 0,
-                'class_name' => $usermap[$uid]['class_name'] ?? '',
+                'class_id' => $role === 'STUDENT' ? ($usermap[$uid]['class_id'] ?? 0) : 0,
+                'class_name' => $resolvedClassName,
             ];
         }
 
