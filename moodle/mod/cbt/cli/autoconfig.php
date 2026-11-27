@@ -70,7 +70,7 @@ set_config('webhook_secret', 'aksaventra_sync_secret_2026', 'mod_cbt');
 set_config('default_timelimit', 7200, 'mod_cbt');
 set_config('default_maxstrikes', 3, 'mod_cbt');
 
-// 3. Register External Service: mod_cbt_service
+// 3. Register External Service: mod_cbt_service (MUST set component = 'mod_cbt' so Moodle upgrade.php never throws installserviceshortnameerror)
 cli_writeln("[3/7] Mendaftarkan External Service mod_cbt_service...");
 $service = $DB->get_record('external_services', ['shortname' => 'mod_cbt_service']);
 if (!$service) {
@@ -78,6 +78,7 @@ if (!$service) {
     $existing_by_name = $DB->get_record('external_services', ['name' => 'CBT Examination Service']);
     if ($existing_by_name) {
         $existing_by_name->shortname = 'mod_cbt_service';
+        $existing_by_name->component = 'mod_cbt';
         $existing_by_name->enabled = 1;
         $existing_by_name->restrictedusers = 0;
         $existing_by_name->timemodified = time();
@@ -88,6 +89,7 @@ if (!$service) {
         $service = new stdClass();
         $service->name = 'CBT Examination Service';
         $service->shortname = 'mod_cbt_service';
+        $service->component = 'mod_cbt';
         $service->restrictedusers = 0;
         $service->enabled = 1;
         $service->timecreated = time();
@@ -97,6 +99,7 @@ if (!$service) {
     }
 } else {
     $service->name = 'CBT Examination Service';
+    $service->component = 'mod_cbt';
     $service->enabled = 1;
     $service->restrictedusers = 0;
     $service->timemodified = time();

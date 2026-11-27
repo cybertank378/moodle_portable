@@ -82,18 +82,25 @@ function xmldb_cbt_upgrade($oldversion) {
         set_config('default_timelimit', 7200, 'mod_cbt');
         set_config('default_maxstrikes', 3, 'mod_cbt');
 
-        // Register / enable external service
+        // Register / enable external service (MUST set component = 'mod_cbt' for external_update_descriptions)
         $service = $DB->get_record('external_services', ['shortname' => 'mod_cbt_service']);
+        if (!$service) {
+            $service = $DB->get_record('external_services', ['name' => 'CBT Examination Service']);
+        }
         if (!$service) {
             $service = new stdClass();
             $service->name = 'CBT Examination Service';
             $service->shortname = 'mod_cbt_service';
+            $service->component = 'mod_cbt';
             $service->restrictedusers = 0;
             $service->enabled = 1;
             $service->timecreated = time();
             $service->timemodified = time();
             $service->id = $DB->insert_record('external_services', $service);
         } else {
+            $service->name = 'CBT Examination Service';
+            $service->shortname = 'mod_cbt_service';
+            $service->component = 'mod_cbt';
             $service->enabled = 1;
             $service->restrictedusers = 0;
             $service->timemodified = time();
@@ -186,6 +193,71 @@ function xmldb_cbt_upgrade($oldversion) {
             \mod_cbt\observer::dispatch('user', 'updated', 2);
         }
         upgrade_mod_savepoint(true, 2026112101, 'cbt');
+    }
+
+    if ($oldversion < 2026112701) {
+        // Repair legacy mdl_external_services rows created without component = 'mod_cbt'.
+        // Without component = 'mod_cbt', Moodle's external_update_descriptions() fails at
+        // lib/upgradelib.php:1378 with installserviceshortnameerror because it only matches
+        // built-in services by component and then collides on shortname = 'mod_cbt_service'.
+        $candidates = $DB->get_records_select(
+            'external_services',
+            "shortname = :shortname OR name = :name",
+            [
+                'shortname' => 'mod_cbt_service',
+                'name' => 'CBT Examination Service',
+            ],
+            'id ASC'
+        );
+
+        if (!empty($candidates)) {
+            $primary = null;
+            foreach ($candidates as $cand) {
+                if ($cand->shortname === 'mod_cbt_service') {
+                    $primary = $cand;
+                    break;
+                }
+            }
+            if (!$primary) {
+                $primary = reset($candidates);
+            }
+
+            foreach ($candidates as $dup) {
+                if ((int)$dup->id === (int)$primary->id) {
+                    continue;
+                }
+
+                // Preserve any active API tokens pointing to the duplicate service row.
+                $DB->set_field('external_tokens', 'externalserviceid', $primary->id, ['externalserviceid' => $dup->id]);
+
+                // Migrate authorized service users without creating duplicates.
+                $dupusers = $DB->get_records('external_services_users', ['externalserviceid' => $dup->id]);
+                foreach ($dupusers as $du) {
+                    if (!$DB->record_exists('external_services_users', [
+                        'externalserviceid' => $primary->id,
+                        'userid' => $du->userid,
+                    ])) {
+                        $du->externalserviceid = $primary->id;
+                        $DB->update_record('external_services_users', $du);
+                    } else {
+                        $DB->delete_records('external_services_users', ['id' => $du->id]);
+                    }
+                }
+
+                $DB->delete_records('external_services_functions', ['externalserviceid' => $dup->id]);
+                $DB->delete_records('external_services', ['id' => $dup->id]);
+            }
+
+            $primary->name = 'CBT Examination Service';
+            $primary->shortname = 'mod_cbt_service';
+            $primary->component = 'mod_cbt';
+            $primary->enabled = 1;
+            $primary->restrictedusers = 0;
+            $primary->timemodified = time();
+            $DB->update_record('external_services', $primary);
+        }
+
+        upgrade_mod_savepoint(true, 2026112701, 'cbt');
     }
 
     return true;
