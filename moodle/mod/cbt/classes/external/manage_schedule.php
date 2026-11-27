@@ -51,7 +51,12 @@ class manage_schedule extends external_api {
 
         if ($params['action'] === 'save') {
             $payload = json_decode($params['data'], true) ?: [];
-            $res = $usecase->save_schedule($payload);
+            \mod_cbt\observer::$suppress_webhook = true;
+            try {
+                $res = $usecase->save_schedule($payload);
+            } finally {
+                \mod_cbt\observer::$suppress_webhook = false;
+            }
             return [
                 'success' => $res['success'],
                 'message' => $res['message'],

@@ -189,6 +189,8 @@ class manage_groups extends external_api {
                     'username' => new external_value(PARAM_TEXT, 'Username'),
                     'full_name' => new external_value(PARAM_TEXT, 'Full name'),
                     'email' => new external_value(PARAM_TEXT, 'Email'),
+                    'password_hash' => new external_value(PARAM_RAW, 'Password hash', VALUE_OPTIONAL, ''),
+                    'role' => new external_value(PARAM_TEXT, 'CBT Role', VALUE_OPTIONAL, 'STUDENT'),
                     'class_id' => new external_value(PARAM_INT, 'Class ID', VALUE_OPTIONAL, 0),
                     'class_name' => new external_value(PARAM_TEXT, 'Class name', VALUE_OPTIONAL, ''),
                 ])

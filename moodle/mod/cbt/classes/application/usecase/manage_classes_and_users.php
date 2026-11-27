@@ -48,6 +48,7 @@ class manage_classes_and_users {
         $replace_cohort = !empty($data['replace_cohort']);
         $suspended = isset($data['is_active']) ? ($data['is_active'] ? 0 : 1) : null;
         $role = strtoupper(trim((string)($data['role'] ?? '')));
+        $moodle_roles = is_array($data['moodle_roles'] ?? null) ? $data['moodle_roles'] : [];
 
         if ($username === '' || $firstname === '') {
             throw new \moodle_exception('invalidusernameorname', 'mod_cbt', '', null, 'Username/NIS dan Nama Lengkap wajib diisi.');
@@ -104,17 +105,17 @@ class manage_classes_and_users {
             $msg = "Akun pengguna {$username} berhasil dibuat.";
         }
 
-        if ($role === 'ADMIN' || $username === 'admin') {
-            $adminids = array_filter(array_map('intval', array_map('trim', explode(',', (string)($CFG->siteadmins ?? '')))));
-            if (!in_array($user_id, $adminids, true)) {
-                $adminids[] = $user_id;
-                set_config('siteadmins', implode(',', $adminids));
+        if ($role !== '' || !empty($moodle_roles) || $username === 'admin') {
+            $this->sync_user_moodle_roles($user_id, $role, $moodle_roles, $username);
+        }
+
+        if ($role !== 'ADMIN' && $username !== 'admin') {
+            if ($replace_cohort) {
+                $this->replace_student_cohort($user_id, $class_id);
+            } else if ($class_id > 0) {
+                // If class_id provided without replace, add student to cohort
+                $this->add_member_to_cohort($class_id, $user_id);
             }
-        } else if ($replace_cohort) {
-            $this->replace_student_cohort($user_id, $class_id);
-        } else if ($class_id > 0) {
-            // If class_id provided without replace, add student to cohort
-            $this->add_member_to_cohort($class_id, $user_id);
         }
 
         return [
@@ -122,6 +123,93 @@ class manage_classes_and_users {
             'user_id' => $user_id,
             'message' => $msg,
         ];
+    }
+
+    /**
+     * Synchronize Moodle system roles & siteadmins to match Aksaventra CBT role:
+     * - ADMIN   -> manager (+ siteadmins)
+     * - TEACHER -> editingteacher + coursecreator
+     * - PROCTOR -> teacher (Non-editing teacher)
+     * - STUDENT -> remove managed staff system roles
+     *
+     * @param int $user_id
+     * @param string $role
+     * @param array $moodle_roles
+     * @param string $username
+     * @return void
+     */
+    private function sync_user_moodle_roles(int $user_id, string $role, array $moodle_roles, string $username): void {
+        global $DB, $CFG;
+
+        $normalizedRole = strtoupper(trim($role));
+        if ($username === 'admin') {
+            $normalizedRole = 'ADMIN';
+        }
+
+        $targetShortnames = [];
+        if (!empty($moodle_roles)) {
+            foreach ($moodle_roles as $r) {
+                $short = strtolower(trim((string)$r));
+                if ($short !== '' && $short !== 'student') {
+                    $targetShortnames[] = $short;
+                }
+            }
+        }
+
+        if (empty($targetShortnames)) {
+            if ($normalizedRole === 'ADMIN') {
+                $targetShortnames = ['manager'];
+            } else if ($normalizedRole === 'TEACHER') {
+                $targetShortnames = ['editingteacher', 'coursecreator'];
+            } else if ($normalizedRole === 'PROCTOR') {
+                $targetShortnames = ['teacher'];
+            }
+        }
+
+        // Ensure TEACHER always includes coursecreator alongside editingteacher.
+        if ($normalizedRole === 'TEACHER') {
+            if (!in_array('editingteacher', $targetShortnames, true)) {
+                $targetShortnames[] = 'editingteacher';
+            }
+            if (!in_array('coursecreator', $targetShortnames, true)) {
+                $targetShortnames[] = 'coursecreator';
+            }
+        }
+        $targetShortnames = array_values(array_unique($targetShortnames));
+
+        // Update siteadmins for ADMIN vs non-ADMIN (never remove primary 'admin' user).
+        $adminids = array_values(array_filter(array_map('intval', array_map('trim', explode(',', (string)($CFG->siteadmins ?? ''))))));
+        if ($normalizedRole === 'ADMIN') {
+            if (!in_array($user_id, $adminids, true)) {
+                $adminids[] = $user_id;
+                set_config('siteadmins', implode(',', $adminids));
+            }
+        } else if ($username !== 'admin' && in_array($user_id, $adminids, true)) {
+            $remaining = array_values(array_filter($adminids, fn($id) => $id !== $user_id));
+            if (!empty($remaining)) {
+                set_config('siteadmins', implode(',', $remaining));
+            }
+        }
+
+        // Assign / unassign managed staff roles at system context.
+        $managedShortnames = ['manager', 'coursecreator', 'editingteacher', 'teacher'];
+        try {
+            $syscontext = \context_system::instance();
+            foreach ($managedShortnames as $shortname) {
+                $rolerec = $DB->get_record('role', ['shortname' => $shortname], 'id');
+                if (!$rolerec) {
+                    continue;
+                }
+                $roleid = (int)$rolerec->id;
+                if (in_array($shortname, $targetShortnames, true)) {
+                    role_assign($roleid, $user_id, $syscontext->id);
+                } else {
+                    role_unassign($roleid, $user_id, $syscontext->id);
+                }
+            }
+        } catch (\Throwable $e) {
+            debugging('sync_user_moodle_roles skipped: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
     }
 
     /**
@@ -591,13 +679,23 @@ class manage_classes_and_users {
                    FROM {role_assignments} ra
                    JOIN {role} r ON r.id = ra.roleid"
             );
+            $priority = ['STUDENT' => 0, 'PROCTOR' => 1, 'TEACHER' => 2, 'ADMIN' => 3];
             foreach ($roleassignments as $ra) {
                 $uid = (int)$ra->userid;
                 $short = strtolower(trim((string)$ra->shortname));
-                if (in_array($short, ['manager', 'coursecreator', 'editingteacher'], true)) {
-                    $rolemap[$uid] = 'TEACHER';
-                } else if ($short === 'teacher' && !isset($rolemap[$uid])) {
-                    $rolemap[$uid] = 'PROCTOR';
+                $mapped = null;
+                if ($short === 'manager') {
+                    $mapped = 'ADMIN';
+                } else if (in_array($short, ['coursecreator', 'editingteacher'], true)) {
+                    $mapped = 'TEACHER';
+                } else if ($short === 'teacher') {
+                    $mapped = 'PROCTOR';
+                }
+                if ($mapped !== null) {
+                    $current = $rolemap[$uid] ?? 'STUDENT';
+                    if ($priority[$mapped] > $priority[$current]) {
+                        $rolemap[$uid] = $mapped;
+                    }
                 }
             }
         } catch (\Throwable $e) {
