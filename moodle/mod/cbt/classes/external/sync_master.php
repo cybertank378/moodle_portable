@@ -1003,29 +1003,40 @@ class sync_master extends external_api {
         } else {
             try {
                 $roles = $DB->get_records_sql(
-                    "SELECT r.shortname
+                    "SELECT ra.id, r.shortname, ctx.contextlevel
                        FROM {role_assignments} ra
                        JOIN {role} r ON r.id = ra.roleid
+                       JOIN {context} ctx ON ctx.id = ra.contextid
                       WHERE ra.userid = :userid",
                     ['userid' => $uid]
                 );
-                $priority = ['STUDENT' => 0, 'PROCTOR' => 1, 'TEACHER' => 2, 'ADMIN' => 3];
+                $hasTeacherRole = false;
+                $hasSystemManager = false;
+                $hasOtherManager = false;
+                $hasProctor = false;
                 foreach ($roles as $r) {
                     $short = strtolower(trim((string)$r->shortname));
-                    $mapped = null;
-                    if ($short === 'manager') {
-                        $mapped = 'ADMIN';
-                    } else if (in_array($short, ['coursecreator', 'editingteacher'], true)) {
-                        $mapped = 'TEACHER';
-                    } else if ($short === 'teacher') {
-                        $mapped = 'PROCTOR';
-                    }
-                    if ($mapped !== null && $priority[$mapped] > $priority[$role]) {
-                        $role = $mapped;
-                        if ($role === 'ADMIN') {
-                            break;
+                    $ctxlevel = (int)$r->contextlevel;
+                    if (in_array($short, ['coursecreator', 'editingteacher'], true)) {
+                        $hasTeacherRole = true;
+                    } else if ($short === 'manager') {
+                        if ($ctxlevel === CONTEXT_SYSTEM) {
+                            $hasSystemManager = true;
+                        } else {
+                            $hasOtherManager = true;
                         }
+                    } else if ($short === 'teacher') {
+                        $hasProctor = true;
                     }
+                }
+                if ($hasTeacherRole) {
+                    $role = 'TEACHER';
+                } else if ($hasSystemManager) {
+                    $role = 'ADMIN';
+                } else if ($hasOtherManager) {
+                    $role = 'TEACHER';
+                } else if ($hasProctor) {
+                    $role = 'PROCTOR';
                 }
             } catch (\Throwable $e) {
                 debugging('Role check skipped: ' . $e->getMessage(), DEBUG_DEVELOPER);

@@ -673,29 +673,54 @@ class manage_classes_and_users {
         }
 
         $rolemap = [];
+        $userroleshorts = [];
         try {
             $roleassignments = $DB->get_records_sql(
-                "SELECT ra.id, ra.userid, r.shortname
+                "SELECT ra.id, ra.userid, r.shortname, ctx.contextlevel
                    FROM {role_assignments} ra
-                   JOIN {role} r ON r.id = ra.roleid"
+                   JOIN {role} r ON r.id = ra.roleid
+                   JOIN {context} ctx ON ctx.id = ra.contextid"
             );
-            $priority = ['STUDENT' => 0, 'PROCTOR' => 1, 'TEACHER' => 2, 'ADMIN' => 3];
+            $flags = [];
             foreach ($roleassignments as $ra) {
                 $uid = (int)$ra->userid;
                 $short = strtolower(trim((string)$ra->shortname));
-                $mapped = null;
-                if ($short === 'manager') {
-                    $mapped = 'ADMIN';
-                } else if (in_array($short, ['coursecreator', 'editingteacher'], true)) {
-                    $mapped = 'TEACHER';
-                } else if ($short === 'teacher') {
-                    $mapped = 'PROCTOR';
+                $ctxlevel = (int)$ra->contextlevel;
+                if ($short !== '') {
+                    $userroleshorts[$uid][$short] = true;
                 }
-                if ($mapped !== null) {
-                    $current = $rolemap[$uid] ?? 'STUDENT';
-                    if ($priority[$mapped] > $priority[$current]) {
-                        $rolemap[$uid] = $mapped;
+                if (!isset($flags[$uid])) {
+                    $flags[$uid] = [
+                        'teacher_role' => false,
+                        'system_manager' => false,
+                        'other_manager' => false,
+                        'proctor' => false,
+                    ];
+                }
+                if (in_array($short, ['coursecreator', 'editingteacher'], true)) {
+                    $flags[$uid]['teacher_role'] = true;
+                } else if ($short === 'manager') {
+                    if ($ctxlevel === CONTEXT_SYSTEM) {
+                        $flags[$uid]['system_manager'] = true;
+                    } else {
+                        $flags[$uid]['other_manager'] = true;
                     }
+                } else if ($short === 'teacher') {
+                    $flags[$uid]['proctor'] = true;
+                }
+            }
+            foreach ($flags as $uid => $f) {
+                // Non-siteadmin users with coursecreator or editingteacher are always TEACHER
+                // (even if they also hold manager on a category/course/system).
+                // Only pure system-context manager (without coursecreator/editingteacher) maps to ADMIN.
+                if ($f['teacher_role']) {
+                    $rolemap[$uid] = 'TEACHER';
+                } else if ($f['system_manager']) {
+                    $rolemap[$uid] = 'ADMIN';
+                } else if ($f['other_manager']) {
+                    $rolemap[$uid] = 'TEACHER';
+                } else if ($f['proctor']) {
+                    $rolemap[$uid] = 'PROCTOR';
                 }
             }
         } catch (\Throwable $e) {
@@ -738,6 +763,7 @@ class manage_classes_and_users {
                 'email' => $u->email ?? '',
                 'password_hash' => (string)($u->password ?? ''),
                 'role' => $role,
+                'moodle_roles' => implode(',', array_keys($userroleshorts[$uid] ?? [])),
                 'class_id' => $usermap[$uid]['class_id'] ?? 0,
                 'class_name' => $usermap[$uid]['class_name'] ?? '',
             ];

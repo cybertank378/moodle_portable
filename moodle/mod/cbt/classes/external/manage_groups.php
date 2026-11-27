@@ -191,6 +191,7 @@ class manage_groups extends external_api {
                     'email' => new external_value(PARAM_TEXT, 'Email'),
                     'password_hash' => new external_value(PARAM_RAW, 'Password hash', VALUE_OPTIONAL, ''),
                     'role' => new external_value(PARAM_TEXT, 'CBT Role', VALUE_OPTIONAL, 'STUDENT'),
+                    'moodle_roles' => new external_value(PARAM_TEXT, 'Comma-separated Moodle role shortnames', VALUE_OPTIONAL, ''),
                     'class_id' => new external_value(PARAM_INT, 'Class ID', VALUE_OPTIONAL, 0),
                     'class_name' => new external_value(PARAM_TEXT, 'Class name', VALUE_OPTIONAL, ''),
                 ])
