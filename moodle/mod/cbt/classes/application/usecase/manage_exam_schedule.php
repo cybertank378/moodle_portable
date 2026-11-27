@@ -100,7 +100,7 @@ class manage_exam_schedule {
             }
         }
         if ($course_id <= 0) {
-            $firstcourse = $DB->get_record_sql('SELECT id FROM {course} WHERE id > 1 AND visible = 1 ORDER BY id ASC', [], IGNORE_MULTIPLE);
+            $firstcourse = $DB->get_record_sql('SELECT id FROM {course} WHERE id > 1 ORDER BY visible DESC, id ASC', [], IGNORE_MULTIPLE);
             $course_id = $firstcourse ? (int)$firstcourse->id : 1;
         }
         $title = trim((string)($data['title'] ?? 'Ujian CBT'));

@@ -201,17 +201,18 @@ class sync_master extends external_api {
     }
 
     /**
-     * Fetch all visible Moodle courses (excluding site course id=1).
+     * Fetch all Moodle courses (both visible and hidden, excluding site course id=1)
+     * so Aksaventra CBT can manage course visibility bidirectionally.
      */
     private static function fetch_courses(): array {
         global $DB;
 
         $records = $DB->get_records_select(
             'course',
-            'id > 1 AND visible = 1',
+            'id > 1',
             null,
             'fullname ASC',
-            'id, fullname, shortname, summary'
+            'id, fullname, shortname, summary, visible'
         );
 
         $courses = [];
@@ -221,6 +222,7 @@ class sync_master extends external_api {
                 'name' => $c->fullname,
                 'short_name' => $c->shortname,
                 'description' => strip_tags((string)($c->summary ?? '')),
+                'is_visible' => ((int)($c->visible ?? 1) === 1),
             ];
         }
         return $courses;
@@ -508,14 +510,48 @@ class sync_master extends external_api {
             $existing = $DB->get_record('course', ['shortname' => $shortname]);
         }
 
+        $hasVisibleFlag = array_key_exists('is_visible', $data) || array_key_exists('visible', $data);
+        $rawVisible = array_key_exists('is_visible', $data)
+            ? $data['is_visible']
+            : ($data['visible'] ?? 1);
+        $visibleInt = (!empty($rawVisible) && $rawVisible !== '0' && $rawVisible !== 'false') ? 1 : 0;
+
         if ($existing) {
-            $existing->fullname = $name;
+            $courseupdate = new \stdClass();
+            $courseupdate->id = (int)$existing->id;
+            $courseupdate->fullname = $name;
             if (!empty($data['short_name'])) {
-                $existing->shortname = $shortname;
+                $courseupdate->shortname = $shortname;
             }
-            $existing->summary = (string)($data['description'] ?? $existing->summary);
-            $existing->timemodified = time();
-            $DB->update_record('course', $existing);
+            if (array_key_exists('description', $data)) {
+                $courseupdate->summary = (string)$data['description'];
+            }
+            if ($hasVisibleFlag) {
+                $courseupdate->visible = $visibleInt;
+                $courseupdate->visibleold = $visibleInt;
+            }
+
+            try {
+                update_course($courseupdate);
+            } catch (\Throwable $e) {
+                $existing->fullname = $name;
+                if (!empty($data['short_name'])) {
+                    $existing->shortname = $shortname;
+                }
+                $existing->summary = (string)($data['description'] ?? $existing->summary);
+                if ($hasVisibleFlag) {
+                    $existing->visible = $visibleInt;
+                    $existing->visibleold = $visibleInt;
+                }
+                $existing->timemodified = time();
+                $DB->update_record('course', $existing);
+                if (function_exists('rebuild_course_cache')) {
+                    rebuild_course_cache((int)$existing->id, true);
+                }
+                if (class_exists('\cache_helper')) {
+                    \cache_helper::purge_by_event('changesincourse');
+                }
+            }
             return [
                 'success' => true,
                 'course_id' => (int)$existing->id,
@@ -534,7 +570,8 @@ class sync_master extends external_api {
         $coursedata->summary = (string)($data['description'] ?? '');
         $coursedata->summaryformat = FORMAT_HTML;
         $coursedata->format = 'topics';
-        $coursedata->visible = 1;
+        $coursedata->visible = $hasVisibleFlag ? $visibleInt : 1;
+        $coursedata->visibleold = $coursedata->visible;
 
         $created = create_course($coursedata);
 
@@ -569,7 +606,7 @@ class sync_master extends external_api {
         }
         if (!$course) {
             $course = $DB->get_record_sql(
-                'SELECT * FROM {course} WHERE id > 1 AND visible = 1 ORDER BY id ASC',
+                'SELECT * FROM {course} WHERE id > 1 ORDER BY visible DESC, id ASC',
                 [],
                 IGNORE_MULTIPLE
             );
@@ -958,9 +995,17 @@ class sync_master extends external_api {
 
             case 'course':
                 if ($moodleid > 1) {
-                    $DB->set_field('course', 'visible', 0, ['id' => $moodleid]);
+                    require_once($CFG->libdir . '/moodlelib.php');
+                    require_once($CFG->dirroot . '/course/lib.php');
+                    $course = $DB->get_record('course', ['id' => $moodleid]);
+                    if ($course) {
+                        delete_course($course, false);
+                        if (function_exists('fix_course_sortorder')) {
+                            fix_course_sortorder();
+                        }
+                    }
                 }
-                return ['success' => true, 'message' => "Course #{$moodleid} disembunyikan/dihapus."];
+                return ['success' => true, 'message' => "Course #{$moodleid} dihapus dari Moodle."];
 
             case 'cbt':
                 $DB->delete_records('cbt_roster', ['cbtid' => $moodleid]);

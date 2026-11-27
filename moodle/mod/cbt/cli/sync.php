@@ -181,10 +181,12 @@ try {
                 \"name\" VARCHAR(191) NOT NULL UNIQUE,
                 \"shortName\" VARCHAR(191) NULL,
                 \"description\" VARCHAR(191) NULL,
+                \"isVisible\" BOOLEAN NOT NULL DEFAULT TRUE,
                 \"createdAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
                 \"updatedAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
             );
         ");
+        $pdo->exec("ALTER TABLE \"Subject\" ADD COLUMN IF NOT EXISTS \"isVisible\" BOOLEAN NOT NULL DEFAULT TRUE;");
 
         $pdo->exec("
             CREATE TABLE IF NOT EXISTS \"Question\" (
@@ -317,10 +319,15 @@ try {
                 `name` VARCHAR(191) NOT NULL UNIQUE,
                 `shortName` VARCHAR(191) NULL,
                 `description` VARCHAR(191) NULL,
+                `isVisible` TINYINT(1) NOT NULL DEFAULT 1,
                 `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
                 `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         ");
+        $stmt_has_is_visible = $pdo->query("SHOW COLUMNS FROM `Subject` LIKE 'isVisible'");
+        if (!$stmt_has_is_visible->fetch()) {
+            $pdo->exec("ALTER TABLE `Subject` ADD COLUMN `isVisible` TINYINT(1) NOT NULL DEFAULT 1 AFTER `description`");
+        }
 
         $pdo->exec("
             CREATE TABLE IF NOT EXISTS `Question` (
@@ -444,13 +451,13 @@ try {
         return $pdo->prepare($sql);
     };
 
-    // 0. SINKRONISASI MATA PELAJARAN (COURSE -> Subject)
-    $courses = $DB->get_records_select('course', 'id > 1 AND visible = 1', null, 'fullname ASC', 'id, fullname, shortname, summary');
+    // 0. SINKRONISASI MATA PELAJARAN (COURSE -> Subject, termasuk course tersembunyi untuk sinkronisasi dua arah)
+    $courses = $DB->get_records_select('course', 'id > 1', null, 'fullname ASC', 'id, fullname, shortname, summary, visible');
     $course_count = 0;
     $stmt_sub_select = $prepare_sql("SELECT `id` FROM `Subject` WHERE `moodleCourseId` = ? OR `name` = ? LIMIT 1");
     $stmt_sub_name_check = $prepare_sql("SELECT `id` FROM `Subject` WHERE `name` = ? AND `id` <> ? LIMIT 1");
-    $stmt_sub_update = $prepare_sql("UPDATE `Subject` SET `moodleCourseId` = ?, `name` = ?, `shortName` = ?, `description` = ?, `updatedAt` = NOW(3) WHERE `id` = ?");
-    $stmt_sub_insert = $prepare_sql("INSERT INTO `Subject` (`id`, `moodleCourseId`, `name`, `shortName`, `description`, `createdAt`, `updatedAt`) VALUES (?, ?, ?, ?, ?, NOW(3), NOW(3))");
+    $stmt_sub_update = $prepare_sql("UPDATE `Subject` SET `moodleCourseId` = ?, `name` = ?, `shortName` = ?, `description` = ?, `isVisible` = ?, `updatedAt` = NOW(3) WHERE `id` = ?");
+    $stmt_sub_insert = $prepare_sql("INSERT INTO `Subject` (`id`, `moodleCourseId`, `name`, `shortName`, `description`, `isVisible`, `createdAt`, `updatedAt`) VALUES (?, ?, ?, ?, ?, ?, NOW(3), NOW(3))");
 
     foreach ($courses as $course) {
         $cid = (int)$course->id;
@@ -460,6 +467,7 @@ try {
         }
         $cshort = mb_substr(trim((string)($course->shortname ?? '')), 0, 190) ?: null;
         $cdesc = mb_substr(trim(strip_tags((string)($course->summary ?? ''))), 0, 190) ?: null;
+        $cvis = ((int)($course->visible ?? 1) === 1) ? 1 : 0;
 
         $stmt_sub_select->execute([$cid, $cname]);
         $srow = $stmt_sub_select->fetch();
@@ -469,9 +477,9 @@ try {
                 $suffix = $cshort ? " ({$cshort})" : " (#{$cid})";
                 $cname = mb_substr($cname, 0, 190 - mb_strlen($suffix)) . $suffix;
             }
-            $stmt_sub_update->execute([$cid, $cname, $cshort, $cdesc, $srow['id']]);
+            $stmt_sub_update->execute([$cid, $cname, $cshort, $cdesc, $cvis, $srow['id']]);
         } else {
-            $stmt_sub_insert->execute([generate_uuid_v4(), $cid, $cname, $cshort, $cdesc]);
+            $stmt_sub_insert->execute([generate_uuid_v4(), $cid, $cname, $cshort, $cdesc, $cvis]);
         }
         $course_count++;
     }
