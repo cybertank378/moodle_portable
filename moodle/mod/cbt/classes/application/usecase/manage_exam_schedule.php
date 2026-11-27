@@ -90,7 +90,19 @@ class manage_exam_schedule {
 
         $now = time();
         $cbt_id = (int)($data['id'] ?? 0);
-        $course_id = (int)($data['course_id'] ?? 1); // Defaults to site/first course
+        $course_id = (int)($data['course_id'] ?? 0);
+        $course_name = trim((string)($data['course_name'] ?? ''));
+        if ($course_id <= 1 && $course_name !== '') {
+            $courserec = $DB->get_record('course', ['fullname' => $course_name], 'id')
+                ?: $DB->get_record('course', ['shortname' => $course_name], 'id');
+            if ($courserec && (int)$courserec->id > 1) {
+                $course_id = (int)$courserec->id;
+            }
+        }
+        if ($course_id <= 0) {
+            $firstcourse = $DB->get_record_sql('SELECT id FROM {course} WHERE id > 1 AND visible = 1 ORDER BY id ASC', [], IGNORE_MULTIPLE);
+            $course_id = $firstcourse ? (int)$firstcourse->id : 1;
+        }
         $title = trim((string)($data['title'] ?? 'Ujian CBT'));
         $time_open = (int)($data['time_open'] ?? $now);
         $time_close = (int)($data['time_close'] ?? ($now + 86400));
@@ -102,12 +114,16 @@ class manage_exam_schedule {
             $token = \mod_cbt\domain\service\token_generator::generate_token('CBT_SECRET', $now, 900);
         }
 
+        $existing = null;
         if ($cbt_id > 0) {
             $existing = $DB->get_record('cbt', ['id' => $cbt_id]);
-            if (!$existing) {
-                throw new \moodle_exception('invalidcbtid', 'mod_cbt');
-            }
+        }
+        if (!$existing && $title !== '') {
+            $existing = $DB->get_record('cbt', ['course' => $course_id, 'name' => $title], '*', IGNORE_MULTIPLE);
+        }
 
+        if ($existing) {
+            $existing->course = $course_id;
             $existing->name = $title;
             $existing->timeopen = $time_open;
             $existing->timeclose = $time_close;
@@ -121,7 +137,7 @@ class manage_exam_schedule {
 
             return [
                 'success' => true,
-                'cbt_id' => $cbt_id,
+                'cbt_id' => (int)$existing->id,
                 'message' => 'Jadwal ujian berhasil diperbarui.',
             ];
         }

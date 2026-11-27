@@ -1009,13 +1009,22 @@ class sync_master extends external_api {
                       WHERE ra.userid = :userid",
                     ['userid' => $uid]
                 );
+                $priority = ['STUDENT' => 0, 'PROCTOR' => 1, 'TEACHER' => 2, 'ADMIN' => 3];
                 foreach ($roles as $r) {
                     $short = strtolower(trim((string)$r->shortname));
-                    if (in_array($short, ['manager', 'coursecreator', 'editingteacher'], true)) {
-                        $role = 'TEACHER';
-                        break;
+                    $mapped = null;
+                    if ($short === 'manager') {
+                        $mapped = 'ADMIN';
+                    } else if (in_array($short, ['coursecreator', 'editingteacher'], true)) {
+                        $mapped = 'TEACHER';
                     } else if ($short === 'teacher') {
-                        $role = 'PROCTOR';
+                        $mapped = 'PROCTOR';
+                    }
+                    if ($mapped !== null && $priority[$mapped] > $priority[$role]) {
+                        $role = $mapped;
+                        if ($role === 'ADMIN') {
+                            break;
+                        }
                     }
                 }
             } catch (\Throwable $e) {
