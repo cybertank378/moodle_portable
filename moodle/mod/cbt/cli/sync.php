@@ -446,25 +446,34 @@ try {
 
     // 0. SINKRONISASI MATA PELAJARAN (COURSE -> Subject)
     $courses = $DB->get_records_select('course', 'id > 1 AND visible = 1', null, 'fullname ASC', 'id, fullname, shortname, summary');
+    $course_count = 0;
     $stmt_sub_select = $prepare_sql("SELECT `id` FROM `Subject` WHERE `moodleCourseId` = ? OR `name` = ? LIMIT 1");
+    $stmt_sub_name_check = $prepare_sql("SELECT `id` FROM `Subject` WHERE `name` = ? AND `id` <> ? LIMIT 1");
     $stmt_sub_update = $prepare_sql("UPDATE `Subject` SET `moodleCourseId` = ?, `name` = ?, `shortName` = ?, `description` = ?, `updatedAt` = NOW(3) WHERE `id` = ?");
     $stmt_sub_insert = $prepare_sql("INSERT INTO `Subject` (`id`, `moodleCourseId`, `name`, `shortName`, `description`, `createdAt`, `updatedAt`) VALUES (?, ?, ?, ?, ?, NOW(3), NOW(3))");
 
     foreach ($courses as $course) {
-        $cname = trim($course->fullname);
+        $cid = (int)$course->id;
+        $cname = mb_substr(trim((string)$course->fullname), 0, 190);
         if ($cname === '') {
             continue;
         }
-        $cshort = trim((string)($course->shortname ?? '')) ?: null;
+        $cshort = mb_substr(trim((string)($course->shortname ?? '')), 0, 190) ?: null;
         $cdesc = mb_substr(trim(strip_tags((string)($course->summary ?? ''))), 0, 190) ?: null;
 
-        $stmt_sub_select->execute([(int)$course->id, $cname]);
+        $stmt_sub_select->execute([$cid, $cname]);
         $srow = $stmt_sub_select->fetch();
         if ($srow) {
-            $stmt_sub_update->execute([(int)$course->id, $cname, $cshort, $cdesc, $srow['id']]);
+            $stmt_sub_name_check->execute([$cname, $srow['id']]);
+            if ($stmt_sub_name_check->fetch()) {
+                $suffix = $cshort ? " ({$cshort})" : " (#{$cid})";
+                $cname = mb_substr($cname, 0, 190 - mb_strlen($suffix)) . $suffix;
+            }
+            $stmt_sub_update->execute([$cid, $cname, $cshort, $cdesc, $srow['id']]);
         } else {
-            $stmt_sub_insert->execute([generate_uuid_v4(), (int)$course->id, $cname, $cshort, $cdesc]);
+            $stmt_sub_insert->execute([generate_uuid_v4(), $cid, $cname, $cshort, $cdesc]);
         }
+        $course_count++;
     }
 
     // 1. SINKRONISASI KELAS (COHORT)
@@ -1002,6 +1011,7 @@ try {
         'success' => true,
         'message' => 'Sinkronisasi master data Moodle ke Aksaventra CBT berhasil.',
         'counts' => [
+            'courses' => $course_count,
             'classes' => $class_count,
             'students' => $user_count,
             'questions' => $question_count,
