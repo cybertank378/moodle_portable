@@ -44,18 +44,25 @@ function xmldb_cbt_install() {
     set_config('default_timelimit', 7200, 'mod_cbt');
     set_config('default_maxstrikes', 3, 'mod_cbt');
 
-    // 3. Register external service
+    // 3. Register external service (MUST include component = 'mod_cbt' so Moodle upgrade_component_updated matches it)
     $service = $DB->get_record('external_services', ['shortname' => 'mod_cbt_service']);
+    if (!$service) {
+        $service = $DB->get_record('external_services', ['name' => 'CBT Examination Service']);
+    }
     if (!$service) {
         $service = new stdClass();
         $service->name = 'CBT Examination Service';
         $service->shortname = 'mod_cbt_service';
+        $service->component = 'mod_cbt';
         $service->restrictedusers = 0;
         $service->enabled = 1;
         $service->timecreated = time();
         $service->timemodified = time();
         $service->id = $DB->insert_record('external_services', $service);
     } else {
+        $service->name = 'CBT Examination Service';
+        $service->shortname = 'mod_cbt_service';
+        $service->component = 'mod_cbt';
         $service->enabled = 1;
         $service->restrictedusers = 0;
         $service->timemodified = time();
