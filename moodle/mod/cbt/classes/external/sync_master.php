@@ -1003,7 +1003,7 @@ class sync_master extends external_api {
         } else {
             try {
                 $roles = $DB->get_records_sql(
-                    "SELECT ra.id, r.shortname, ctx.contextlevel
+                    "SELECT ra.id, r.shortname, r.archetype, ctx.contextlevel
                        FROM {role_assignments} ra
                        JOIN {role} r ON r.id = ra.roleid
                        JOIN {context} ctx ON ctx.id = ra.contextid
@@ -1016,16 +1016,18 @@ class sync_master extends external_api {
                 $hasProctor = false;
                 foreach ($roles as $r) {
                     $short = strtolower(trim((string)$r->shortname));
+                    $arch = strtolower(trim((string)($r->archetype ?? '')));
                     $ctxlevel = (int)$r->contextlevel;
-                    if (in_array($short, ['coursecreator', 'editingteacher'], true)) {
+                    if (in_array($short, ['coursecreator', 'editingteacher'], true)
+                        || in_array($arch, ['coursecreator', 'editingteacher'], true)) {
                         $hasTeacherRole = true;
-                    } else if ($short === 'manager') {
+                    } else if ($short === 'manager' || $arch === 'manager') {
                         if ($ctxlevel === CONTEXT_SYSTEM) {
                             $hasSystemManager = true;
                         } else {
                             $hasOtherManager = true;
                         }
-                    } else if ($short === 'teacher') {
+                    } else if ($short === 'teacher' || $arch === 'teacher') {
                         $hasProctor = true;
                     }
                 }
@@ -1043,11 +1045,22 @@ class sync_master extends external_api {
             }
         }
 
+        $firstname = trim((string)($user->firstname ?? ''));
+        $lastname = trim((string)($user->lastname ?? ''));
+        if ($role === 'STUDENT') {
+            $resolvedFullName = $firstname !== '' ? $firstname : ($lastname !== '' && $lastname !== '-' ? $lastname : (string)$user->username);
+            $resolvedClassName = ($lastname !== '' && $lastname !== '-') ? $lastname : '';
+        } else {
+            $resolvedFullName = trim($firstname . ($lastname !== '' && $lastname !== '-' ? ' ' . $lastname : '')) ?: (string)$user->username;
+            $resolvedClassName = '';
+        }
+
         return [
             'valid' => true,
             'user_id' => $uid,
             'username' => (string)$user->username,
-            'full_name' => trim(((string)($user->firstname ?? '')) . ' ' . ((string)($user->lastname ?? ''))) ?: (string)$user->username,
+            'full_name' => $resolvedFullName,
+            'class_name' => $resolvedClassName,
             'email' => (string)($user->email ?? ''),
             'role' => $role,
             'message' => 'Kredensial Moodle valid.',

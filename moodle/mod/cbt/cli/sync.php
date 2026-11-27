@@ -469,12 +469,15 @@ try {
 
     // 1. SINKRONISASI KELAS (COHORT)
     $cohorts = $DB->get_records('cohort', null, 'name ASC', 'id, name, idnumber, description');
-    $cohort_map = []; // moodle cohort id => ClassGroup UUID
+    $cohort_map = []; // moodle cohort id => ['id' => ClassGroup UUID, 'name' => string]
+    $class_name_map = []; // lower(className) => ['id' => ClassGroup UUID, 'name' => string]
     $class_count = 0;
 
     $stmt_cg_select = $prepare_sql("SELECT `id` FROM `ClassGroup` WHERE `moodleId` = ? OR `name` = ? LIMIT 1");
+    $stmt_cg_select_by_name = $prepare_sql("SELECT `id`, `name` FROM `ClassGroup` WHERE `name` = ? LIMIT 1");
     $stmt_cg_update = $prepare_sql("UPDATE `ClassGroup` SET `moodleId` = ?, `name` = ?, `code` = ?, `description` = ?, `updatedAt` = NOW(3) WHERE `id` = ?");
     $stmt_cg_insert = $prepare_sql("INSERT INTO `ClassGroup` (`id`, `moodleId`, `name`, `code`, `description`, `createdAt`, `updatedAt`) VALUES (?, ?, ?, ?, ?, NOW(3), NOW(3))");
+    $stmt_cg_insert_auto = $prepare_sql("INSERT INTO `ClassGroup` (`id`, `moodleId`, `name`, `code`, `description`, `createdAt`, `updatedAt`) VALUES (?, NULL, ?, ?, ?, NOW(3), NOW(3))");
 
     foreach ($cohorts as $c) {
         $name = trim($c->name);
@@ -491,10 +494,12 @@ try {
             $cg_id = generate_uuid_v4();
             $stmt_cg_insert->execute([$cg_id, (int)$c->id, $name, $code, $desc]);
         }
-        $cohort_map[(int)$c->id] = [
+        $entry = [
             'id' => $cg_id,
             'name' => $name,
         ];
+        $cohort_map[(int)$c->id] = $entry;
+        $class_name_map[mb_strtolower($name)] = $entry;
         $class_count++;
     }
 
@@ -517,7 +522,7 @@ try {
     $role_map = [];
     try {
         $role_rows = $DB->get_records_sql("
-            SELECT ra.id, ra.userid, r.shortname, ctx.contextlevel
+            SELECT ra.id, ra.userid, r.shortname, r.archetype, ctx.contextlevel
               FROM {role_assignments} ra
               JOIN {role} r ON r.id = ra.roleid
               JOIN {context} ctx ON ctx.id = ra.contextid
@@ -526,6 +531,7 @@ try {
         foreach ($role_rows as $rr) {
             $ruid = (int)$rr->userid;
             $rshort = strtolower(trim((string)$rr->shortname));
+            $rarch = strtolower(trim((string)($rr->archetype ?? '')));
             $ctxlevel = (int)$rr->contextlevel;
             if (!isset($role_flags[$ruid])) {
                 $role_flags[$ruid] = [
@@ -535,15 +541,21 @@ try {
                     'proctor' => false,
                 ];
             }
-            if (in_array($rshort, ['coursecreator', 'editingteacher'], true)) {
+            // Moodle standard roles -> Aksaventra CBT roles:
+            // - Teacher (editingteacher) & Course creator (coursecreator) -> TEACHER
+            // - Non-editing teacher (teacher) -> PROCTOR (Pengawas)
+            // - Manager (manager) -> ADMIN (system context) / TEACHER (course or category context)
+            // - Student (student) -> STUDENT (default)
+            if (in_array($rshort, ['coursecreator', 'editingteacher'], true)
+                || in_array($rarch, ['coursecreator', 'editingteacher'], true)) {
                 $role_flags[$ruid]['teacher_role'] = true;
-            } else if ($rshort === 'manager') {
+            } else if ($rshort === 'manager' || $rarch === 'manager') {
                 if ($ctxlevel === CONTEXT_SYSTEM) {
                     $role_flags[$ruid]['system_manager'] = true;
                 } else {
                     $role_flags[$ruid]['other_manager'] = true;
                 }
-            } else if ($rshort === 'teacher') {
+            } else if ($rshort === 'teacher' || $rarch === 'teacher') {
                 $role_flags[$ruid]['proctor'] = true;
             }
         }
@@ -586,12 +598,10 @@ try {
     foreach ($users as $u) {
         $uid = (int)$u->id;
         $uname = trim($u->username);
-        $fullname = trim($u->firstname . ' ' . $u->lastname);
-        if ($fullname === '') {
-            $fullname = $uname;
-        }
+        $firstname = trim((string)($u->firstname ?? ''));
+        $lastname = trim((string)($u->lastname ?? ''));
 
-        // Tentukan Role
+        // Tentukan Role terlebih dahulu agar pemetaan nama & kelas sesuai tipe akun
         $role = 'STUDENT';
         if (is_siteadmin($uid) || strtolower($uname) === 'admin') {
             $role = 'ADMIN';
@@ -599,12 +609,46 @@ try {
             $role = $role_map[$uid];
         }
 
-        // Dapatkan Kelas (hanya untuk STUDENT)
+        // Pemetaan Nama & Kelas:
+        // - Untuk STUDENT: firstname -> fullName, lastname -> kelas (ClassGroup / className), fallback ke cohort jika lastname kosong/'-'
+        // - Untuk ADMIN/TEACHER/PROCTOR: gabungkan firstname + lastname sebagai fullName
         $classGroupId = null;
         $className = null;
-        if ($role === 'STUDENT' && isset($user_cohort_map[$uid]) && isset($cohort_map[$user_cohort_map[$uid]])) {
-            $classGroupId = $cohort_map[$user_cohort_map[$uid]]['id'];
-            $className = $cohort_map[$user_cohort_map[$uid]]['name'];
+
+        if ($role === 'STUDENT') {
+            $fullname = $firstname !== '' ? $firstname : ($lastname !== '' && $lastname !== '-' ? $lastname : $uname);
+
+            if ($lastname !== '' && $lastname !== '-') {
+                $classKey = mb_strtolower($lastname);
+                if (!isset($class_name_map[$classKey])) {
+                    $stmt_cg_select_by_name->execute([$lastname]);
+                    $cg_existing = $stmt_cg_select_by_name->fetch();
+                    if ($cg_existing) {
+                        $class_name_map[$classKey] = [
+                            'id' => $cg_existing['id'],
+                            'name' => $cg_existing['name'],
+                        ];
+                    } else {
+                        $new_cg_id = generate_uuid_v4();
+                        $stmt_cg_insert_auto->execute([$new_cg_id, $lastname, $lastname, "Kelas {$lastname}"]);
+                        $class_name_map[$classKey] = [
+                            'id' => $new_cg_id,
+                            'name' => $lastname,
+                        ];
+                        $class_count++;
+                    }
+                }
+                $classGroupId = $class_name_map[$classKey]['id'];
+                $className = $class_name_map[$classKey]['name'];
+            } else if (isset($user_cohort_map[$uid]) && isset($cohort_map[$user_cohort_map[$uid]])) {
+                $classGroupId = $cohort_map[$user_cohort_map[$uid]]['id'];
+                $className = $cohort_map[$user_cohort_map[$uid]]['name'];
+            }
+        } else {
+            $fullname = trim($firstname . ($lastname !== '' && $lastname !== '-' ? ' ' . $lastname : ''));
+            if ($fullname === '') {
+                $fullname = $uname;
+            }
         }
 
         $roomCode = ($role === 'STUDENT') ? 'LAB-01' : null;
